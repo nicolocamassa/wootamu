@@ -1,0 +1,67 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Room {
+  id              Int      @id @default(autoincrement())
+  code            String   @unique
+  event           String?
+  current_status  String?
+  current_song_id Int?
+  created_at      DateTime @default(now())
+
+  current_song Song?  @relation("CurrentSong", fields: [current_song_id], references: [id])
+  users        User[]
+  songs        Song[] @relation("RoomSongs")
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  username   String
+  isHost     Boolean  @default(false)
+  room_id    Int
+  created_at DateTime @default(now())
+
+  room      Room       @relation(fields: [room_id], references: [id])
+  votes     Vote[]
+  reactions Reaction[]
+}
+
+model Song {
+  id      Int    @id @default(autoincrement())
+  title   String
+  artist  String
+  room_id Int
+
+  room       Room       @relation("RoomSongs", fields: [room_id], references: [id])
+  current_in Room[]     @relation("CurrentSong")
+  votes      Vote[]
+  reactions  Reaction[]
+}
+
+model Vote {
+  id         Int      @id @default(autoincrement())
+  value      Int
+  user_id    Int
+  song_id    Int
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+  song Song @relation(fields: [song_id], references: [id])
+}
+
+model Reaction {
+  id         Int      @id @default(autoincrement())
+  type       String
+  user_id    Int
+  song_id    Int
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+  song Song @relation(fields: [song_id], references: [id])
+}

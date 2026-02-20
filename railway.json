@@ -1,6 +1,7 @@
 {
   "build": {
     "builder": "NIXPACKS"
+    
   },
   "deploy": {
     "startCommand": "npx prisma db push && npm start",

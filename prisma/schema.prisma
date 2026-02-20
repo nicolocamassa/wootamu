@@ -1,0 +1,112 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mysql"
+  url      = env("DATABASE_URL")
+}
+
+model Room {
+  id              Int      @id @default(autoincrement())
+  code            String   @unique
+  event           String?
+  current_status  String?
+  current_song_id Int?
+  created_at      DateTime @default(now())
+
+  current_song Song?  @relation("CurrentSong", fields: [current_song_id], references: [id])
+  users        User[]
+  songs        Song[] @relation("RoomSongs")
+  comments Comment[]
+}
+
+model Profile {
+  id         Int      @id @default(autoincrement())
+  username   String   @unique
+  pin        String
+  approved   Boolean  @default(false)
+  created_at DateTime @default(now())
+  users      User[]
+}
+
+model User {
+  id         Int      @id @default(autoincrement())
+  username   String
+  userToken  String   @unique @default(uuid())
+  isHost     Boolean  @default(false)
+  room_id    Int
+  profile_id Int?
+  created_at DateTime @default(now())
+
+  room      Room       @relation(fields: [room_id], references: [id])
+  profile   Profile?   @relation(fields: [profile_id], references: [id])
+  votes     Vote[]
+  reactions Reaction[]
+  comments  Comment[]
+}
+
+model Song {
+  id               Int       @id @default(autoincrement())
+  title            String
+  artist           String
+  image_url        String?
+  image_url_nobg   String?
+  room_id          Int?
+  performance_time DateTime?
+  performed        Boolean   @default(false) // <-- aggiunto
+  created_at       DateTime  @default(now())
+
+  room       Room?      @relation("RoomSongs", fields: [room_id], references: [id])
+  current_in Room[]     @relation("CurrentSong")
+  votes      Vote[]
+  reactions  Reaction[]
+  comments   Comment[]
+  festivalStatuses FestivalStatus[]
+}
+
+model Comment {
+  id         Int      @id @default(autoincrement())
+  text       String
+  user_id    Int
+  song_id    Int
+  room_id    Int
+  likes      Int      @default(0)
+  dislikes   Int      @default(0)
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+  song Song @relation(fields: [song_id], references: [id])
+  room Room @relation(fields: [room_id], references: [id])
+}
+
+model Vote {
+  id         Int      @id @default(autoincrement())
+  value      Int
+  user_id    Int
+  song_id    Int
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+  song Song @relation(fields: [song_id], references: [id])
+}
+
+model Reaction {
+  id         Int      @id @default(autoincrement())
+  type       String
+  user_id    Int
+  song_id    Int
+  created_at DateTime @default(now())
+
+  user User @relation(fields: [user_id], references: [id])
+  song Song @relation(fields: [song_id], references: [id])
+}
+
+model FestivalStatus {
+  id        Int      @id @default(1)
+  type      String
+  songId    Int?
+  updatedAt DateTime @updatedAt
+
+  song Song? @relation(fields: [songId], references: [id])
+}

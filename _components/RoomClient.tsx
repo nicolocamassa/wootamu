@@ -93,7 +93,7 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
 
   return (
     <div>
-      <Header usersCount={room.users.length} festivalType={festivalType} />
+      <Header isRoom usersCount={room.users.length} festivalType={festivalType} />
       <CurrentEvent
         festivalType={festivalType}
         songId={currentSongId}

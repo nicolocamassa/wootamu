@@ -30,12 +30,20 @@ export async function GET(req: Request) {
       include: { room: true },
     });
 
-    const rooms = allUsers.map((u) => ({
+    const rooms = await Promise.all(
+  allUsers.map(async (u) => {
+    const usersCount = await prisma.user.count({
+      where: { room_id: u.room_id },
+    });
+    return {
       code: u.room.code,
       event: u.room.event ?? null,
       isHost: u.isHost,
       userToken: u.userToken,
-    }));
+      usersCount,
+    };
+  })
+);
 
     return NextResponse.json({ rooms, nickname: profile?.username ?? null });
   } catch (error) {

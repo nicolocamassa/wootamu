@@ -13,8 +13,8 @@ const button = tv({
     base: 'py-4 font-bold text-stone-400 rounded-2xl hover:cursor-pointer hover:bg-red-500 w-full',
     variants: {
         color: {
-            primary: 'bg-purple-800 text-white',
-            secondary: 'bg-stone-950'
+            primary: 'bg-active-button text-white',
+            secondary: 'bg-disabled-button'
         },
         disabled: {
             true: 'opacity-50 cursor-not-allowed pointer-events-none hover:bg-transparent'

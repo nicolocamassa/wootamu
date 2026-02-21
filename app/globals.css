@@ -3,6 +3,8 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+  --disabled-button: #1A1A22;
+  --active-button: #D4AF37;
 }
 
 @theme inline {
@@ -10,11 +12,14 @@
   --color-foreground: var(--foreground);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
+
+  --color-active-button: #D4AF37;
+  --color-disabled-button: var(--disabled-button);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0d14;
+    --background: #0F0F14;
     --foreground: #ededed;
   }
 }

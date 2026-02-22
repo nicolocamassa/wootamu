@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { pusherClient } from "@/_lib/pusherClient";
 
 type Song = {
@@ -15,10 +15,9 @@ type SongListProps = {
   currentSongId?: number | null;
 };
 
-export default function SongList({ roomCode, currentSongId }: SongListProps) {
+export default function SongList({ roomCode }: SongListProps) {
   const [songs, setSongs] = useState<Song[]>([]);
   const [loading, setLoading] = useState(true);
-  const containerRef = useRef<HTMLDivElement>(null);
 
   const fetchSongs = async () => {
     try {
@@ -35,58 +34,96 @@ export default function SongList({ roomCode, currentSongId }: SongListProps) {
 
   useEffect(() => {
     fetchSongs();
-
     const channel = pusherClient.subscribe("festival");
-
     const handleStatusUpdate = () => fetchSongs();
     channel.bind("status-update", handleStatusUpdate);
-
     return () => {
       channel.unbind("status-update", handleStatusUpdate);
     };
   }, [roomCode]);
 
-  if (loading) return <p>Caricamento canzoni...</p>;
-  if (!songs.length) return null;
+  if (loading || !songs.length) return null;
 
   return (
-    <>
-      <h2 className="font-bold text-md mt-4">Prossime canzoni</h2>
+    <div className="mt-5 mb-2 w-full overflow-hidden">
+      <p
+        style={{
+          fontFamily: "'Inter', sans-serif",
+          fontSize: 12,
+          fontWeight: 500,
+          letterSpacing: "0.07em",
+          textTransform: "uppercase",
+          color: "rgba(255,255,255,0.3)",
+          marginBottom: 10,
+          paddingLeft: 0,
+        }}
+      >
+        Prossime canzoni
+      </p>
+
       <div
-        ref={containerRef}
-        className="flex overflow-x-auto gap-4 snap-x snap-mandatory scroll-smooth py-3"
-        style={{ scrollPadding: "1rem" }}
+        className="flex overflow-x-auto gap-2 pb-1 snap-x snap-mandatory"
+        style={{
+          paddingLeft: 0,
+          paddingRight: 16,
+          scrollbarWidth: "none",
+          scrollPaddingLeft: "1.25rem",
+          maskImage:
+            "linear-gradient(to right, transparent 0%, black 2%, black 96%, transparent 100%)",
+          WebkitMaskImage:
+            "linear-gradient(to right, transparent 0%, black 2%, black 96%, transparent 100%)",
+        }}
       >
         {songs.map((s) => (
           <div
             key={s.id}
-            className="flex-shrink-0 flex items-center justify-between w-72 border rounded-2xl py-4 px-5 border-yellow-300/25 snap-center"
+            className="flex-shrink-0 flex items-center gap-2.5 snap-start"
+            style={{
+              width: 230,
+              padding: "9px 10px",
+              borderRadius: 12,
+              background: "#0F0F14",
+              border: "1px solid rgba(255,255,255,0.07)",
+            }}
           >
-            <div className="flex items-center gap-3">
-              {s.image_url ? (
-                <img
-                  src={s.image_url}
-                  alt={s.artist}
-                  className="w-12 h-12 rounded-xl object-cover flex-shrink-0"
-                />
-              ) : (
-                <div className="w-10 h-10 rounded-full bg-stone-700 flex-shrink-0" />
-              )}
-              <div className="flex flex-col">
-                <span className="font-bold">{s.title}</span>
-                <span className="text-stone-500 text-sm">{s.artist}</span>
+            {s.image_url ? (
+              <img
+                src={s.image_url}
+                alt={s.artist}
+                style={{ width: 38, height: 38, borderRadius: 8, objectFit: "cover", flexShrink: 0 }}
+              />
+            ) : (
+              <div style={{ width: 38, height: 38, borderRadius: 8, background: "rgba(255,255,255,0.05)", flexShrink: 0 }} />
+            )}
+
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 13, fontWeight: 600, color: "#ededed", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", lineHeight: 1.3 }}>
+                {s.title}
+              </div>
+              <div style={{ fontFamily: "'Inter', sans-serif", fontSize: 11, color: "rgba(255,255,255,0.3)", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginTop: 2 }}>
+                {s.artist}
               </div>
             </div>
-            <span className="bg-stone-400/15 px-2 rounded-full text-sm text-stone-400 ml-2 inline-block whitespace-nowrap">
-              {s.performance_time &&
-                new Date(s.performance_time).toLocaleTimeString([], {
-                  hour: "2-digit",
-                  minute: "2-digit",
-                })}
-            </span>
+
+            {s.performance_time && (
+              <div style={{
+                flexShrink: 0,
+                fontFamily: "'DM Mono', monospace",
+                fontSize: 10,
+                fontWeight: 500,
+                color: "rgba(255,255,255,0.35)",
+                background: "rgba(255,255,255,0.06)",
+                border: "1px solid rgba(255,255,255,0.08)",
+                borderRadius: 6,
+                padding: "3px 6px",
+                lineHeight: 1.4,
+              }}>
+                {new Date(s.performance_time).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+              </div>
+            )}
           </div>
         ))}
       </div>
-    </>
+    </div>
   );
 }

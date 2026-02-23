@@ -19,7 +19,7 @@ type Song = {
 };
 
 type FestivalStatus = {
-  type: "attesa" | "presentazione" | "esibizione" | "votazione" | "spot" | "pausa" | "fine";
+  type: "attesa" | "presentazione" | "esibizione" | "votazione" | "spot" | "pausa" | "classifica" | "fine";
   songId?: number | null;
   song?: Song | null;
 };
@@ -40,10 +40,9 @@ type Comment = {
 type FloatingReaction = {
   id: number;
   emoji: string;
-  x: number; // percentage from right (0-40)
+  x: number;
 };
 
-// { user_id -> { emoji -> count } }
 type UserReactionsMap = Record<number, Record<string, number>>;
 
 const REACTIONS = [
@@ -90,6 +89,15 @@ const styles = `
   }
   .ib-fadein { animation: ib-fadein 0.35s ease both; }
 
+  @keyframes ib-shake {
+    0%, 100% { transform: translateX(0); }
+    20%       { transform: translateX(-5px); }
+    40%       { transform: translateX(5px); }
+    60%       { transform: translateX(-4px); }
+    80%       { transform: translateX(4px); }
+  }
+  .ib-shake { animation: ib-shake 0.35s ease both; }
+
   /* Buttons */
   .ib-btn {
     width: 100%;
@@ -120,6 +128,13 @@ const styles = `
     cursor: pointer;
   }
   .ib-btn-live:hover { color: rgba(255,255,255,0.75); }
+  .ib-btn-danger {
+    background: rgba(220,60,60,0.15);
+    color: rgba(255,100,100,0.85);
+    border: 1px solid rgba(220,60,60,0.25);
+    cursor: pointer;
+  }
+  .ib-btn-danger:hover { background: rgba(220,60,60,0.22); }
 
   /* Slider */
   .ib-slider {
@@ -224,7 +239,7 @@ const styles = `
     animation: ib-pulse 2.5s ease-in-out infinite;
   }
 
-  /* Reaction bar — scrollable, no scrollbar visible */
+  /* Reaction bar */
   .ib-reaction-bar {
     display: flex;
     gap: 8px;
@@ -234,8 +249,8 @@ const styles = `
     border-radius: 14px;
     padding: 10px 14px;
     overflow-x: auto;
-    scrollbar-width: none; /* Firefox */
-    -ms-overflow-style: none; /* IE/Edge */
+    scrollbar-width: none;
+    -ms-overflow-style: none;
   }
   .ib-reaction-bar::-webkit-scrollbar { display: none; }
 
@@ -257,7 +272,7 @@ const styles = `
   }
   .ib-reaction-btn:active { transform: scale(0.88); background: rgba(255,255,255,0.1); }
 
-  /* Floating reactions — smaller */
+  /* Floating reactions */
   @keyframes ib-float {
     0%   { opacity: 1;   transform: translateY(0)   rotate(var(--r)) scale(1); }
     80%  { opacity: 0.8; transform: translateY(-130px) rotate(var(--r)) scale(1.05); }
@@ -307,6 +322,42 @@ const styles = `
     transition: background 0.15s;
   }
   .ib-react-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.75); }
+
+  /* Skip confirm overlay */
+  @keyframes ib-overlay-in {
+    from { opacity: 0; transform: translateY(6px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+  .ib-skip-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    padding: 24px;
+    background: rgba(15,15,20,0.92);
+    backdrop-filter: blur(10px);
+    animation: ib-overlay-in 0.25s ease both;
+  }
+
+  /* Gold glow pulse for classifica finale */
+  @keyframes ib-gold-glow {
+    0%, 100% { box-shadow: 0 0 0px rgba(212,175,55,0); border-color: rgba(212,175,55,0.2); }
+    50%       { box-shadow: 0 0 18px rgba(212,175,55,0.18); border-color: rgba(212,175,55,0.45); }
+  }
+  .ib-card-gold {
+    animation: ib-gold-glow 2.5s ease-in-out infinite;
+  }
+
+  /* Countdown number pop */
+  @keyframes ib-count-pop {
+    0%   { opacity: 0; transform: scale(1.4); }
+    40%  { opacity: 1; transform: scale(0.95); }
+    100% { opacity: 1; transform: scale(1); }
+  }
 `;
 
 function StatusScreen({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
@@ -334,22 +385,27 @@ export default function InteractBox({
   const [festivalState, setFestivalState] = useState<FestivalStatus | null>(null);
   const [voteValue, setVoteValue] = useState<number>(5);
   const [hasVoted, setHasVoted] = useState(false);
-  // Voti tenuti separati dallo stato festival: sopravvivono ai cambi di scena
+  const [hasSkipped, setHasSkipped] = useState(false);
+  const [skipConfirm, setSkipConfirm] = useState(false);
   const [displayVotes, setDisplayVotes] = useState<Vote[]>([]);
   const songIdForVotesRef = useRef<number | null>(null);
+  const [finalLeaderboard, setFinalLeaderboard] = useState<{ id: number; title: string; artist: string; average: number | null; voteCount: number }[]>([]);
+  const [finalCountdown, setFinalCountdown] = useState<number | null>(null); // 3,2,1 prima di mostrare
+  const [showFinalLeaderboard, setShowFinalLeaderboard] = useState(false);
+  const [lbView, setLbView] = useState<"stanza" | "mia">("stanza");
+  const [myVotes, setMyVotes] = useState<{ songId: number; value: number }[]>([]);
+  const finalCountdownRef = useRef<NodeJS.Timeout | null>(null);
   const [showResults, setShowResults] = useState(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const [hasPendingState, setHasPendingState] = useState(false);
   const [comments, setComments] = useState<Comment[]>([]);
   const [visibleComment, setVisibleComment] = useState<Comment | null>(null);
 
-  // Reactions state
   const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
   const [combo, setCombo] = useState<{ emoji: string; count: number } | null>(null);
   const [userReactions, setUserReactions] = useState<UserReactionsMap>({});
   const comboTimerRef = useRef<NodeJS.Timeout | null>(null);
   const floatIdRef = useRef(0);
-  // Cooldown map: prevent rapid-fire duplicates per reaction type
   const reactionCooldownRef = useRef<Record<string, boolean>>({});
 
   const commentTimerRef = useRef<NodeJS.Timeout | null>(null);
@@ -368,9 +424,7 @@ export default function InteractBox({
     try {
       const res = await fetch(`/api/festival-status?roomCode=${roomCode}`);
       const data: FestivalStatus = await res.json();
-      // Non cambiare mai stato se l'utente è in votazione e non ha ancora votato
       if (hasVotedRef.current === false && data.type === "votazione") {
-        // Aggiorna solo i voti, non lo stato (per tenere il conteggio live)
         setFestivalState((prev) => {
           if (!prev || prev.type !== "votazione") return prev ?? data;
           return { ...prev, song: prev.song ? { ...prev.song, votes: data.song?.votes ?? [] } : prev.song };
@@ -386,11 +440,9 @@ export default function InteractBox({
     try {
       const sid = songId ?? songIdForVotesRef.current;
       if (!sid) return;
-      // Endpoint dedicato: funziona sempre, indipendentemente dallo stato corrente del festival
       const res = await fetch(`/api/get-votes?songId=${sid}`);
       const votes: Vote[] = await res.json();
       setDisplayVotes(votes);
-      // Aggiorna anche festivalState se la song è ancora quella giusta
       setFestivalState((prev) => {
         if (!prev?.song || prev.song.id !== sid) return prev;
         return { ...prev, song: { ...prev.song, votes } };
@@ -409,7 +461,6 @@ export default function InteractBox({
   const fetchReactions = async (songId: number) => {
     try {
       const res = await fetch(`/api/get-reactions?songId=${songId}&roomCode=${roomCode}`);
-      // Expected shape: Array<{ user_id: number; type: string; count: number }>
       const data: { user_id: number; type: string; count: number }[] = await res.json();
       const map: UserReactionsMap = {};
       for (const row of data) {
@@ -421,17 +472,33 @@ export default function InteractBox({
     } catch (err) { console.error(err); }
   };
 
+  const fetchFinalLeaderboard = async () => {
+    try {
+      const res = await fetch(`/api/room-leaderboard?roomCode=${roomCode}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setFinalLeaderboard(data);
+    } catch (err) { console.error(err); }
+  };
+
+  const fetchMyVotes = async () => {
+    if (!userToken) return;
+    try {
+      const res = await fetch(`/api/get-my-votes?roomCode=${roomCode}`, {
+        headers: { Authorization: `Bearer ${userToken}` },
+      });
+      if (!res.ok) return;
+      const data: { songId: number; value: number }[] = await res.json();
+      setMyVotes(data);
+    } catch (err) { console.error(err); }
+  };
+
   const handleReaction = async (reactionType: string, emoji: string, e?: React.MouseEvent) => {
     e?.stopPropagation();
     if (!festivalState?.songId || !userToken) return;
-
-    // Cooldown: blocca click rapidi dello stesso tipo
     if (reactionCooldownRef.current[reactionType]) return;
     reactionCooldownRef.current[reactionType] = true;
     setTimeout(() => { reactionCooldownRef.current[reactionType] = false; }, 300);
-
-    // Nessuno spawn locale: la floating emoji arriva via Pusher per tutti (incluso chi clicca)
-    // Il combo viene aggiornato nell'handler Pusher quando user_id === currentUser.id
     try {
       await fetch("/api/add-reaction", {
         method: "POST",
@@ -452,13 +519,10 @@ export default function InteractBox({
 
   useEffect(() => {
     fetchStatus();
-
-    // Unsubscribe prima di risubscrivere (protegge da StrictMode double-mount)
     pusherClient.unsubscribe("festival");
     const channel = pusherClient.subscribe("festival");
 
     const handleStatusUpdate = (data: FestivalStatus) => {
-      // Non cambiare mai stato se l'utente è in votazione e non ha ancora votato
       if (hasVotedRef.current === false && festivalStateRef.current?.type === "votazione") {
         pendingStateRef.current = data;
         setHasPendingState(true);
@@ -471,13 +535,10 @@ export default function InteractBox({
     const handleCommentUpdate = ({ songId }: { songId: number }) => fetchComments(songId);
 
     const handleReactionUpdate = ({ emoji, user_id }: { emoji: string; user_id?: number }) => {
-      // Una sola floating emoji per evento
       const id = floatIdRef.current++;
       const x = Math.random() * 30 + 5;
       setFloatingReactions((prev) => [...prev, { id, emoji, x }]);
       setTimeout(() => setFloatingReactions((prev) => prev.filter((r) => r.id !== id)), 2400);
-
-      // Badge: aggiorna conteggio per quell'utente
       if (user_id !== undefined) {
         setUserReactions((prev) => {
           const userMap = { ...(prev[user_id] ?? {}) };
@@ -485,8 +546,6 @@ export default function InteractBox({
           return { ...prev, [user_id]: userMap };
         });
       }
-
-      // Combo visibile a tutti (non solo a chi clicca)
       setCombo((prev) => {
         const count = prev?.emoji === emoji ? prev.count + 1 : 1;
         if (comboTimerRef.current) clearTimeout(comboTimerRef.current);
@@ -501,7 +560,6 @@ export default function InteractBox({
     channel.bind("reaction-update", handleReactionUpdate);
 
     return () => {
-      // Unbind con la reference corretta — fix del bug principale dei listener doppi
       channel.unbind("status-update", handleStatusUpdate);
       channel.unbind("vote-update", handleVoteUpdate);
       channel.unbind("comment-update", handleCommentUpdate);
@@ -512,6 +570,8 @@ export default function InteractBox({
 
   useEffect(() => {
     setHasVoted(false);
+    setHasSkipped(false);
+    setSkipConfirm(false);
     setShowResults(false);
     showResultsRef.current = false;
     setTimeLeft(null);
@@ -526,7 +586,6 @@ export default function InteractBox({
     onShowResults?.(false);
     if (commentTimerRef.current) clearTimeout(commentTimerRef.current);
     if (countdownRef.current) clearInterval(countdownRef.current);
-    // Memorizza il songId corrente per fetchVotes anche dopo cambi di stato
     if (festivalState?.songId) songIdForVotesRef.current = festivalState.songId;
   }, [festivalState?.songId]);
 
@@ -541,6 +600,32 @@ export default function InteractBox({
   useEffect(() => { if (timeLeft === 0) closeResults(); }, [timeLeft]);
   useEffect(() => { if (festivalState?.type) onFestivalTypeChange?.(festivalState.type); }, [festivalState?.type]);
   useEffect(() => { onSongIdChange?.(festivalState?.songId ?? null); }, [festivalState?.songId]);
+  useEffect(() => {
+    if (festivalState?.type === "classifica") {
+      // Fetch in anticipo mentre il countdown scorre
+      fetchFinalLeaderboard();
+      fetchMyVotes();
+      setShowFinalLeaderboard(false);
+      setFinalCountdown(3);
+      if (finalCountdownRef.current) clearInterval(finalCountdownRef.current);
+      finalCountdownRef.current = setInterval(() => {
+        setFinalCountdown((prev) => {
+          if (prev === null) return null;
+          if (prev <= 1) {
+            clearInterval(finalCountdownRef.current!);
+            setShowFinalLeaderboard(true);
+            return null;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    } else {
+      if (finalCountdownRef.current) clearInterval(finalCountdownRef.current);
+      setFinalCountdown(null);
+      setShowFinalLeaderboard(false);
+    }
+    return () => { if (finalCountdownRef.current) clearInterval(finalCountdownRef.current); };
+  }, [festivalState?.type]);
 
   useEffect(() => {
     if (!festivalState?.song || !currentUser) return;
@@ -592,9 +677,8 @@ export default function InteractBox({
 
   if (!festivalState || !currentUser) return null;
 
-  // Usa displayVotes se disponibile (sopravvive ai cambi di stato), fallback su festivalState
   const votes = displayVotes.length > 0 ? displayVotes : (festivalState.song?.votes ?? []);
-  const canVote = festivalState.type === "votazione" && !hasVoted && !showResults;
+  const canVote = festivalState.type === "votazione" && !hasVoted && !hasSkipped && !showResults;
 
   const handleVote = async () => {
     if (!canVote || !festivalState.songId || !userToken) return;
@@ -607,13 +691,19 @@ export default function InteractBox({
       if (!res.ok) throw new Error("Errore invio voto");
       setHasVoted(true);
       hasVotedRef.current = true;
-
-      // In ogni caso mostra la classifica con i voti aggiornati
-      // Se c'era un pending (festival andato avanti) lo teniamo lì:
-      // verrà applicato quando l'utente chiude la classifica (closeResults)
+      setSkipConfirm(false);
       triggerResults();
       await fetchVotes(festivalState.songId);
     } catch (err) { console.error(err); }
+  };
+
+  const handleSkipConfirmed = () => {
+    setHasSkipped(true);
+    setSkipConfirm(false);
+    // Tratta lo skip come "ha votato" per sbloccare il flusso
+    hasVotedRef.current = true;
+    onHasVotedChange?.(true);
+    triggerResults();
   };
 
   const handleReact = async (commentId: number, type: "like" | "dislike") => {
@@ -646,7 +736,6 @@ export default function InteractBox({
 
     return (
       <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "16px 14px 14px" }}>
-        {/* Header */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexShrink: 0 }}>
           <span className="ib-pill">
             <span className="ib-dot" />
@@ -677,7 +766,6 @@ export default function InteractBox({
           )}
         </div>
 
-        {/* Media */}
         <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           {average !== null ? (
             <>
@@ -693,7 +781,6 @@ export default function InteractBox({
           )}
         </div>
 
-        {/* Lista */}
         <div style={{ display: "flex", flexDirection: "column", gap: 5, overflowY: "auto", flex: 1 }}>
           {sortedUsers.map((u, i) => {
             const vote = votes.find((v) => v.user_id === u.id);
@@ -711,8 +798,8 @@ export default function InteractBox({
                 <span style={{ flex: 1, fontSize: 13, fontWeight: isMe ? 700 : 400, color: isFirst ? "#ededed" : isMe ? "#ededed" : "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                   {u.username}
                   {isMe && <span style={{ color: isFirst ? "rgba(212,175,55,0.4)" : "rgba(255,255,255,0.22)", fontWeight: 400 }}> · tu</span>}
+                  {isMe && hasSkipped && <span style={{ color: "rgba(255,100,100,0.4)", fontWeight: 400 }}> · saltato</span>}
                 </span>
-                {/* Reaction badge */}
                 {(() => {
                   const rMap = userReactions[u.id];
                   if (!rMap) return null;
@@ -749,6 +836,196 @@ export default function InteractBox({
     );
   };
 
+  // ─── CLASSIFICA FINALE ────────────────────────────────────────────────────
+  const renderClassificaFinale = () => {
+    const withVotes = finalLeaderboard.filter((s) => s.average !== null);
+    const overall = withVotes.length > 0
+      ? withVotes.reduce((sum, s) => sum + s.average!, 0) / withVotes.length
+      : null;
+    const circ = 2 * Math.PI * 10;
+    const FINAL_DURATION = 10;
+
+    // ── Schermo countdown ──
+    if (!showFinalLeaderboard) {
+      return (
+        <div style={{
+          display: "flex", flexDirection: "column",
+          alignItems: "center", justifyContent: "center",
+          height: "100%", gap: 12, textAlign: "center", padding: "0 24px",
+        }}>
+          <Trophy size={22} color="#D4AF37" strokeWidth={1.5} style={{ opacity: 0.7 }} />
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", letterSpacing: "0.06em", textTransform: "uppercase", margin: 0 }}>
+            Classifica finale
+          </p>
+          {finalCountdown !== null && (
+            <div
+              key={finalCountdown}
+              style={{
+                fontFamily: "'DM Mono', monospace",
+                fontSize: 72,
+                fontWeight: 400,
+                color: "#D4AF37",
+                lineHeight: 1,
+                letterSpacing: "-2px",
+                animation: "ib-count-pop 0.35s ease both",
+              }}
+            >
+              {finalCountdown}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── Classifica vera ──
+    // Classifica personale: canzoni ordinate per voto dell'utente corrente
+    // Mappa voti personali: songId → myVote
+    const myVotesMap = new Map<number, number>(myVotes.map((v) => [v.songId, v.value]));
+    const personalList = [...finalLeaderboard].sort((a, b) => {
+      const vA = myVotesMap.get(a.id) ?? null;
+      const vB = myVotesMap.get(b.id) ?? null;
+      if (vA !== null && vB !== null) return vB - vA;
+      if (vA !== null) return -1;
+      if (vB !== null) return 1;
+      if (a.average !== null && b.average !== null) return b.average - a.average;
+      return 0;
+    });
+
+    const activeList = lbView === "stanza" ? finalLeaderboard : personalList;
+    const roomRankMap = new Map(finalLeaderboard.map((s, i) => [s.id, i + 1]));
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "16px 14px 14px" }}>
+
+        {/* Header con toggle */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexShrink: 0 }}>
+          <span className="ib-pill" style={{ borderColor: "rgba(212,175,55,0.25)", color: "rgba(212,175,55,0.8)" }}>
+            <Trophy size={9} color="#D4AF37" strokeWidth={2} />
+            Classifica serata
+          </span>
+
+          {/* Toggle stanza / mia */}
+          <div style={{
+            display: "flex",
+            background: "rgba(255,255,255,0.04)",
+            border: "1px solid rgba(255,255,255,0.07)",
+            borderRadius: 8,
+            padding: 2,
+            gap: 2,
+          }}>
+            {(["stanza", "mia"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setLbView(v)}
+                style={{
+                  padding: "4px 10px",
+                  borderRadius: 6,
+                  border: "none",
+                  fontFamily: "'Inter', sans-serif",
+                  fontSize: 10,
+                  fontWeight: 600,
+                  letterSpacing: "0.05em",
+                  textTransform: "uppercase",
+                  cursor: "pointer",
+                  transition: "background 0.15s, color 0.15s",
+                  background: lbView === v ? "rgba(255,255,255,0.09)" : "transparent",
+                  color: lbView === v ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.28)",
+                }}
+              >
+                {v === "stanza" ? "Stanza" : "La mia"}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Media / subtitle */}
+        {lbView === "stanza" ? (
+          overall !== null && (
+            <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 52, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px" }}>
+                {overall.toFixed(2)}
+              </div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", marginTop: 4 }}>
+                media serata · {withVotes.length} {withVotes.length === 1 ? "canzone" : "canzoni"}
+              </div>
+            </div>
+          )
+        ) : (
+          <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
+              Le canzoni ordinate per il tuo voto personale.<br />
+              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.15)" }}>Il numero grigio indica la posizione in classifica stanza.</span>
+            </div>
+          </div>
+        )}
+
+        {/* Lista */}
+        <div style={{ display: "flex", flexDirection: "column", gap: 5, overflowY: "auto", flex: 1 }}>
+          {activeList.length === 0 ? (
+            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.22)", textAlign: "center", paddingTop: 24 }}>
+              Caricamento…
+            </div>
+          ) : (
+            activeList.map((song, i) => {
+              const hasVotes = song.average !== null;
+              const isFirst = lbView === "stanza" && hasVotes && i === 0;
+              const myVote = myVotesMap.get(song.id) ?? null;
+              const roomRank = lbView === "mia" ? roomRankMap.get(song.id) : null;
+
+              let rowClass = "ib-row ";
+              if (isFirst) rowClass += "ib-row-first";
+              else rowClass += "ib-row-other";
+
+              return (
+                <div key={song.id} className={rowClass} style={{ opacity: hasVotes ? 1 : 0.4 }}>
+                  {/* Posizione */}
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)", width: 16, textAlign: "center", flexShrink: 0 }}>
+                    {isFirst ? <Trophy size={11} color="#D4AF37" strokeWidth={2} /> : i + 1}
+                  </span>
+
+                  {/* Titolo + artista */}
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 13, fontWeight: isFirst ? 700 : 400, color: hasVotes ? "#ededed" : "rgba(255,255,255,0.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {song.title}
+                    </span>
+                    <span style={{ display: "block", fontSize: 9, color: isFirst ? "rgba(212,175,55,0.6)" : "rgba(255,255,255,0.25)", letterSpacing: "0.06em", textTransform: "uppercase", marginTop: 1 }}>
+                      {song.artist}
+                    </span>
+                  </span>
+
+                  {/* In vista "mia": posizione stanza a confronto */}
+                  {lbView === "mia" && roomRank !== null && (
+                    <span style={{
+                      fontFamily: "'DM Mono', monospace", fontSize: 10,
+                      color: "rgba(255,255,255,0.18)",
+                      flexShrink: 0, marginRight: 6,
+                    }}>
+                      #{roomRank}
+                    </span>
+                  )}
+
+                  {/* In vista "stanza": numero voti */}
+                  {lbView === "stanza" && hasVotes && (
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", flexShrink: 0, marginRight: 6 }}>
+                      {song.voteCount}v
+                    </span>
+                  )}
+
+                  {/* Valore: in vista "mia" mostra il mio voto se disponibile */}
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 17 : 15, color: isFirst ? "#D4AF37" : hasVotes ? "#ededed" : "rgba(255,255,255,0.15)", flexShrink: 0 }}>
+                    {lbView === "mia" && myVote !== null
+                      ? myVote.toFixed(1)
+                      : hasVotes ? song.average!.toFixed(1) : "—"}
+                  </span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // ─── CONTENT ───────────────────────────────────────────────────────────
   const renderBoxContent = () => {
     if (showResults) return renderClassifica();
@@ -762,11 +1039,7 @@ export default function InteractBox({
                 <img
                   src={festivalState.song.image_url}
                   alt={festivalState.song.artist}
-                  style={{
-                    position: "absolute", inset: 0,
-                    width: "100%", height: "100%",
-                    objectFit: "cover", objectPosition: "center top",
-                  }}
+                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top" }}
                 />
                 <div style={{
                   position: "absolute", inset: 0,
@@ -787,37 +1060,23 @@ export default function InteractBox({
                     </p>
                   </div>
                   <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    <button className="ib-react-btn" onClick={() => handleReact(visibleComment.id, "like")}>
-                      👍 {visibleComment.likes}
-                    </button>
-                    <button className="ib-react-btn" onClick={() => handleReact(visibleComment.id, "dislike")}>
-                      👎 {visibleComment.dislikes}
-                    </button>
+                    <button className="ib-react-btn" onClick={() => handleReact(visibleComment.id, "like")}>👍 {visibleComment.likes}</button>
+                    <button className="ib-react-btn" onClick={() => handleReact(visibleComment.id, "dislike")}>👎 {visibleComment.dislikes}</button>
                   </div>
                 </div>
               </div>
             )}
-            {/* Combo counter */}
             {combo && combo.count >= 2 && (
               <div className="ib-combo" key={combo.count}>
                 <span style={{ fontSize: 16 }}>{combo.emoji}</span>
-                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 500, color: "#ededed" }}>
-                  x{combo.count}
-                </span>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 500, color: "#ededed" }}>x{combo.count}</span>
               </div>
             )}
-
-            {/* Floating reactions */}
             {floatingReactions.map((r) => (
-              <div
-                key={r.id}
-                className="ib-float"
-                style={{ right: `${r.x}%`, "--r": `${(Math.random() - 0.5) * 20}deg` } as React.CSSProperties}
-              >
+              <div key={r.id} className="ib-float" style={{ right: `${r.x}%`, "--r": `${(Math.random() - 0.5) * 20}deg` } as React.CSSProperties}>
                 {r.emoji}
               </div>
             ))}
-
             <div className="ib-song-overlay">
               <p style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4, fontWeight: 500 }}>
                 {festivalState.song?.artist}
@@ -831,57 +1090,110 @@ export default function InteractBox({
 
       case "votazione":
         return (
-          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: "24px 22px" }}>
-            {!hasVoted ? (
-              <>
-                {/* Titolo canzone in votazione */}
-                {festivalState.song && (
-                  <div style={{ textAlign: "center", marginBottom: 20 }}>
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 500, marginBottom: 4 }}>
-                      {festivalState.song.artist}
-                    </div>
-                    <div style={{ fontSize: 17, fontWeight: 700, color: "#ededed", letterSpacing: "-0.3px", lineHeight: 1.2 }}>
-                      {festivalState.song.title}
-                    </div>
-                  </div>
-                )}
-                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 56, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px", marginBottom: 4 }}>
-                  {voteValue.toFixed(1)}
+          <>
+            {/* Overlay di conferma skip */}
+            {skipConfirm && (
+              <div className="ib-skip-overlay">
+                <div style={{ fontSize: 28, marginBottom: 4 }}>🤔</div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: "#ededed", textAlign: "center" }}>
+                  Saltare il voto?
                 </div>
-                <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginBottom: 28, letterSpacing: "0.05em" }}>
-                  su 10
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", textAlign: "center", lineHeight: 1.5, maxWidth: 220 }}>
+                  Non potrai votare questa canzone. La tua scelta non sarà visibile agli altri.
                 </div>
-                <div style={{ width: "100%" }}>
-                  <input
-                    type="range" min={1} max={10} step={0.1}
-                    value={voteValue}
-                    onChange={(e) => setVoteValue(parseFloat(e.target.value))}
-                    className="ib-slider"
-                    style={{
-                      background: `linear-gradient(to right, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.6) ${(voteValue - 1) / 9 * 100}%, rgba(255,255,255,0.1) ${(voteValue - 1) / 9 * 100}%, rgba(255,255,255,0.1) 100%)`,
-                    }}
-                  />
-                  <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
-                    {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
-                      <span key={n} style={{
-                        fontFamily: "'DM Mono', monospace", fontSize: 9,
-                        color: Math.round(voteValue) === n ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.12)",
-                        transition: "color 0.15s",
-                      }}>
-                        {n}
-                      </span>
-                    ))}
-                  </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", marginTop: 8 }}>
+                  <button
+                    className="ib-btn ib-btn-danger"
+                    onClick={handleSkipConfirmed}
+                  >
+                    Sì, salta il voto
+                  </button>
+                  <button
+                    className="ib-btn ib-btn-live"
+                    onClick={() => setSkipConfirm(false)}
+                  >
+                    Annulla
+                  </button>
                 </div>
-              </>
-            ) : (
-              <div style={{ textAlign: "center" }}>
-                <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.55)", marginBottom: 4 }}>Voto inviato</p>
-                <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)" }}>In attesa degli altri…</p>
               </div>
             )}
-          </div>
+
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: "24px 22px" }}>
+              {!hasVoted && !hasSkipped ? (
+                <>
+                  {festivalState.song && (
+                    <div style={{ textAlign: "center", marginBottom: 20 }}>
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 500, marginBottom: 4 }}>
+                        {festivalState.song.artist}
+                      </div>
+                      <div style={{ fontSize: 17, fontWeight: 700, color: "#ededed", letterSpacing: "-0.3px", lineHeight: 1.2 }}>
+                        {festivalState.song.title}
+                      </div>
+                    </div>
+                  )}
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 56, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px", marginBottom: 4 }}>
+                    {voteValue.toFixed(1)}
+                  </div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginBottom: 28, letterSpacing: "0.05em" }}>
+                    su 10
+                  </div>
+                  <div style={{ width: "100%" }}>
+                    <input
+                      type="range" min={1} max={10} step={0.1}
+                      value={voteValue}
+                      onChange={(e) => setVoteValue(parseFloat(e.target.value))}
+                      className="ib-slider"
+                      style={{
+                        background: `linear-gradient(to right, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.6) ${(voteValue - 1) / 9 * 100}%, rgba(255,255,255,0.1) ${(voteValue - 1) / 9 * 100}%, rgba(255,255,255,0.1) 100%)`,
+                      }}
+                    />
+                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
+                      {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => (
+                        <span key={n} style={{
+                          fontFamily: "'DM Mono', monospace", fontSize: 9,
+                          color: Math.round(voteValue) === n ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.12)",
+                          transition: "color 0.15s",
+                        }}>
+                          {n}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  {/* Skip — subito sotto lo slider, centrato, rossastro tenue */}
+                  <button
+                    onClick={() => setSkipConfirm(true)}
+                    style={{
+                      marginTop: 18,
+                      background: "none",
+                      border: "none",
+                      cursor: "pointer",
+                      fontSize: 11,
+                      color: "rgba(200,80,80,0.5)",
+                      fontFamily: "'Inter', sans-serif",
+                      letterSpacing: "0.04em",
+                      padding: 0,
+                      transition: "color 0.2s",
+                    }}
+                    onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(200,80,80,0.75)")}
+                    onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(200,80,80,0.5)")}
+                  >
+                    Salta il voto
+                  </button>
+                </>
+              ) : (
+                <div style={{ textAlign: "center" }}>
+                  <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.55)", marginBottom: 4 }}>
+                    {hasSkipped ? "Voto saltato" : "Voto inviato"}
+                  </p>
+                  <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)" }}>In attesa degli altri…</p>
+                </div>
+              )}
+            </div>
+          </>
         );
+
+      case "classifica":
+        return renderClassificaFinale();
 
       case "presentazione":
         return <StatusScreen icon={<Mic2 size={20} color="#D4AF37" strokeWidth={1.5} />} title="Presentazione" sub="Carlo Conti sta presentando il prossimo artista." />;
@@ -914,26 +1226,27 @@ export default function InteractBox({
         </button>
       );
     }
-    // During esibizione: scrollable reaction bar
+    if (festivalState?.type === "classifica") {
+      return (
+        <button disabled className="ib-btn ib-btn-muted">
+          Classifica finale
+        </button>
+      );
+    }
     if (festivalState?.type === "esibizione") {
       return (
         <div className="ib-reaction-bar">
           {REACTIONS.map((r) => (
-            <button
-              key={r.type}
-              className="ib-reaction-btn"
-              onClick={(e) => handleReaction(r.type, r.emoji, e)}
-            >
+            <button key={r.type} className="ib-reaction-btn" onClick={(e) => handleReaction(r.type, r.emoji, e)}>
               {r.emoji}
             </button>
           ))}
         </div>
       );
     }
-
     return (
       <button disabled className="ib-btn ib-btn-muted">
-        {hasVoted ? "Voto inviato" : "Conferma"}
+        {hasVoted ? "Voto inviato" : hasSkipped ? "Voto saltato" : "Conferma"}
       </button>
     );
   };
@@ -942,7 +1255,7 @@ export default function InteractBox({
     <>
       <style dangerouslySetInnerHTML={{ __html: styles }} />
       <div className="ib-root ib-fadein" style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%", padding: "0 0px" }}>
-        <div className="ib-card" style={{ flex: 1, minHeight: 0 }}>{renderBoxContent()}</div>
+        <div className={`ib-card${festivalState?.type === "classifica" ? " ib-card-gold" : ""}`} style={{ flex: 1, minHeight: 0 }}>{renderBoxContent()}</div>
         <div style={{ flexShrink: 0 }}>{renderButton()}</div>
       </div>
     </>

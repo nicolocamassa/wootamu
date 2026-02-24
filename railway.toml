@@ -1,0 +1,5 @@
+[build]
+buildCommand = "npx prisma db push --accept-data-loss && npm run build"
+
+[deploy]
+startCommand = "npm run start"

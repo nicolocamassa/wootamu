@@ -67,9 +67,9 @@ const buildPanels = (
   if (s?.averageTotal !== null && s?.averageTotal !== undefined)
     panels.push({ label: "Media serata", value: `${s.averageTotal.toFixed(1)} ⭐` });
   if (s?.bestSong)
-    panels.push({ label: "Più amata", value: s.bestSong, color: "#D4AF37" });
+    panels.push({ label: "La megghiu", value: s.bestSong, color: "#D4AF37" });
   if (s?.worstSong && s.worstSong !== s.bestSong)
-    panels.push({ label: "Meno amata", value: s.worstSong });
+    panels.push({ label: "La pesciu", value: s.worstSong });
   if (s?.songsLeft !== undefined && s.songsLeft > 0)
     panels.push({ label: "Canzoni rimaste", value: `${s.songsLeft} 🎵` });
   if (v.length >= 2 && (ft === "votazione" || hv)) {

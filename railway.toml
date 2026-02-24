@@ -1,5 +1,5 @@
 [build]
-buildCommand = "npx prisma db push --accept-data-loss && npm run build"
+buildCommand = "npx prisma generate && npm run build"
 
 [deploy]
-startCommand = "npm run start"
+startCommand = "npx prisma db push --accept-data-loss && npm run start"

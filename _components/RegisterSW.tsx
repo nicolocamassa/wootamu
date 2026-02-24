@@ -1,5 +1,6 @@
 'use client';
 import { useEffect, useState } from 'react';
+import { Download, X, Share } from 'lucide-react';
 
 type Platform = 'ios' | 'android' | 'other';
 
@@ -23,13 +24,8 @@ export default function RegisterSW() {
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js').catch(console.error);
     }
-
-    // Non mostrare se già installata come app
     if (isInStandaloneMode()) return;
-
-    // Non mostrare se già dismissed in questa sessione
     if (sessionStorage.getItem('pwa-dismissed')) return;
-
     setPlatform(detectPlatform());
   }, []);
 
@@ -45,43 +41,66 @@ export default function RegisterSW() {
   return (
     <div style={{
       position: 'fixed',
-      bottom: 16,
+      bottom: 20,
       left: 16,
       right: 16,
       zIndex: 9999,
       background: '#0F0F14',
       border: '1px solid rgba(212,175,55,0.25)',
-      borderRadius: 16,
+      borderRadius: 18,
       padding: '14px 16px',
-      boxShadow: '0 4px 32px rgba(0,0,0,0.6)',
+      boxShadow: '0 8px 32px rgba(0,0,0,0.7), 0 0 0 1px rgba(255,255,255,0.04)',
       fontFamily: 'Inter, sans-serif',
+      animation: 'pwa-slide-up 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) both',
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
-        <div style={{ flex: 1 }}>
+      <style>{`
+        @keyframes pwa-slide-up {
+          from { opacity: 0; transform: translateY(20px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+        {/* Icona */}
+        <div style={{
+          width: 40, height: 40, borderRadius: 12, flexShrink: 0,
+          background: 'rgba(212,175,55,0.1)',
+          border: '1px solid rgba(212,175,55,0.2)',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+        }}>
+          {isIos
+            ? <Share size={18} color="#D4AF37" strokeWidth={1.8} />
+            : <Download size={18} color="#D4AF37" strokeWidth={1.8} />
+          }
+        </div>
+
+        {/* Testo */}
+        <div style={{ flex: 1, minWidth: 0 }}>
           <p style={{ margin: 0, fontSize: 13, fontWeight: 700, color: '#ededed' }}>
-            Installa l'app 📲
+            Installa l'app
           </p>
-          <p style={{ margin: '6px 0 0', fontSize: 12, color: 'rgba(255,255,255,0.45)', lineHeight: 1.5 }}>
+          <p style={{ margin: '3px 0 0', fontSize: 11, color: 'rgba(255,255,255,0.4)', lineHeight: 1.4 }}>
             {isIos
-              ? <>Tocca <strong style={{ color: 'rgba(255,255,255,0.7)' }}>condividi</strong> (□↑) in basso, poi <strong style={{ color: 'rgba(255,255,255,0.7)' }}>"Aggiungi alla schermata Home"</strong></>
-              : <>Tocca i <strong style={{ color: 'rgba(255,255,255,0.7)' }}>tre puntini</strong> (⋮) in alto, poi <strong style={{ color: 'rgba(255,255,255,0.7)' }}>"Installa app"</strong> o <strong style={{ color: 'rgba(255,255,255,0.7)' }}>"Aggiungi alla schermata Home"</strong></>
+              ? <>Tocca <strong style={{ color: 'rgba(255,255,255,0.65)' }}>condividi</strong> → "Aggiungi alla schermata Home"</>
+              : <>Tocca <strong style={{ color: 'rgba(255,255,255,0.65)' }}>⋮</strong> → "Installa app" o "Aggiungi alla schermata Home"</>
             }
           </p>
         </div>
+
+        {/* Chiudi */}
         <button
           onClick={handleDismiss}
           style={{
-            background: 'none',
-            border: 'none',
-            color: 'rgba(255,255,255,0.25)',
-            fontSize: 18,
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.08)',
+            borderRadius: 8,
+            width: 28, height: 28,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
             cursor: 'pointer',
-            padding: '0 0 0 8px',
-            lineHeight: 1,
             flexShrink: 0,
           }}
         >
-          ×
+          <X size={13} color="rgba(255,255,255,0.4)" strokeWidth={2} />
         </button>
       </div>
     </div>

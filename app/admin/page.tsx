@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 
 type StatusType = "attesa" | "presentazione" | "esibizione" | "votazione" | "spot" | "pausa" | "classifica" | "fine";
 
@@ -9,6 +9,7 @@ type Song = {
   artist: string;
   image_url?: string;
   image_url_nobg?: string;
+  performance_time?: string | null;
 };
 
 type SongResult = {
@@ -79,6 +80,10 @@ const adminStyles = `
     cursor: pointer;
     margin-bottom: 8px;
     transition: opacity 0.2s, background 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
   }
   .adm-btn:last-child { margin-bottom: 0; }
   .adm-btn-gold   { background: #D4AF37; color: #0F0F14; }
@@ -125,7 +130,69 @@ const adminStyles = `
   }
   .adm-lb-row-other { background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.04); }
   .adm-lb-row-novotes { background: rgba(255,255,255,0.015); opacity: 0.5; }
+
+  /* Shortcut badge */
+  .adm-kbd {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0.25);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 5px;
+    font-family: 'DM Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 6px;
+    letter-spacing: 0;
+    text-transform: none;
+    flex-shrink: 0;
+    line-height: 1.4;
+  }
+
+  /* Toast notifica shortcut */
+  @keyframes adm-toast-in {
+    from { opacity: 0; transform: translateY(8px) translateX(-50%); }
+    to   { opacity: 1; transform: translateY(0) translateX(-50%); }
+  }
+  @keyframes adm-toast-out {
+    from { opacity: 1; }
+    to   { opacity: 0; }
+  }
+  .adm-toast {
+    position: fixed;
+    bottom: 28px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(15,15,20,0.92);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 10px 18px;
+    font-size: 13px;
+    color: #ededed;
+    z-index: 999;
+    white-space: nowrap;
+    animation: adm-toast-in 0.2s ease both;
+  }
+  .adm-toast-out { animation: adm-toast-out 0.3s ease forwards; }
+
+  /* Next song highlight */
+  .adm-next-song {
+    background: rgba(34,197,94,0.07);
+    border: 1px solid rgba(34,197,94,0.2);
+    border-radius: 12px;
+    padding: 12px 14px;
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
 `;
+
+// ── Shortcut badge component ─────────────────────────────────────────────────
+function Kbd({ children }: { children: string }) {
+  return <span className="adm-kbd">{children}</span>;
+}
 
 export default function FestivalControlPage() {
   const [loading, setLoading] = useState(false);
@@ -141,7 +208,15 @@ export default function FestivalControlPage() {
   const [leaderboard, setLeaderboard] = useState<SongResult[]>([]);
   const [lbLoading, setLbLoading] = useState(false);
   const [roomCode, setRoomCode] = useState<string>("");
+  const [toast, setToast] = useState<{ text: string; out: boolean } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // ── refs per stale closure nei keydown ───────────────────────────────────
+  const songsRef = useRef<Song[]>([]);
+  const songIdRef = useRef<number | "">("");
+  useEffect(() => { songsRef.current = songs; }, [songs]);
+  useEffect(() => { songIdRef.current = songId; }, [songId]);
 
   const fetchSongs = async () => {
     const res = await fetch("/api/songs");
@@ -175,6 +250,117 @@ export default function FestivalControlPage() {
     const interval = setInterval(fetchPending, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  // ── Toast helper ─────────────────────────────────────────────────────────
+  const showToast = useCallback((text: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ text, out: false });
+    toastTimerRef.current = setTimeout(() => {
+      setToast((t) => t ? { ...t, out: true } : null);
+      setTimeout(() => setToast(null), 350);
+    }, 2200);
+  }, []);
+
+  // ── updateStatus ─────────────────────────────────────────────────────────
+  const updateStatus = useCallback(async (type: StatusType, overrideSongId?: number | "") => {
+    setLoading(true);
+    const sid = overrideSongId !== undefined ? overrideSongId : songIdRef.current;
+    try {
+      await fetch("/api/festival-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type,
+          songId: type === "esibizione" || type === "votazione" ? sid : null,
+        }),
+      });
+    } catch (error) {
+      console.error("Errore aggiornamento stato", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ── Prossima canzone per orario ───────────────────────────────────────────
+  const getNextSong = useCallback((): Song | null => {
+    const list = songsRef.current;
+    if (!list.length) return null;
+
+    const withTime = list
+      .filter((s) => s.performance_time)
+      .sort((a, b) => new Date(a.performance_time!).getTime() - new Date(b.performance_time!).getTime());
+
+    const currentId = songIdRef.current;
+
+    if (withTime.length > 0) {
+      // Se c'è una canzone corrente, prendi la successiva per orario
+      if (currentId) {
+        const currentIndex = withTime.findIndex((s) => s.id === currentId);
+        if (currentIndex >= 0 && currentIndex + 1 < withTime.length) {
+          return withTime[currentIndex + 1];
+        }
+      }
+      // Altrimenti la prima con orario futuro, o la prima in assoluto
+      const now = new Date();
+      const future = withTime.find((s) => new Date(s.performance_time!) >= now);
+      return future ?? withTime[0];
+    }
+
+    // Nessun orario: usa ordine lista, prende la successiva all'attuale
+    if (currentId) {
+      const idx = list.findIndex((s) => s.id === currentId);
+      if (idx >= 0 && idx + 1 < list.length) return list[idx + 1];
+    }
+    return list[0];
+  }, []);
+
+  // ── Keyboard shortcuts ────────────────────────────────────────────────────
+  // N → prossima esibizione
+  // V → votazione canzone corrente
+  // 1 → presentazione
+  // 2 → spot
+  // 3 → pausa
+  // 4 → attesa
+  // 5 → classifica finale
+  // 6 → fine serata
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Non triggera se l'utente sta scrivendo in un input/select/textarea
+      const tag = (e.target as HTMLElement).tagName.toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") return;
+
+      const key = e.key.toLowerCase();
+
+      if (key === "n") {
+        const next = getNextSong();
+        if (!next) { showToast("⚠️ Nessuna canzone disponibile"); return; }
+        setSongId(next.id);
+        updateStatus("esibizione", next.id);
+        showToast(`▶ Esibizione: ${next.artist} – ${next.title}`);
+        return;
+      }
+      if (key === "v") {
+        const sid = songIdRef.current;
+        if (!sid) { showToast("⚠️ Nessuna canzone selezionata"); return; }
+        updateStatus("votazione", sid);
+        const song = songsRef.current.find((s) => s.id === sid);
+        showToast(`🗳 Votazione: ${song ? `${song.artist} – ${song.title}` : sid}`);
+        return;
+      }
+      if (key === "1") { updateStatus("presentazione"); showToast("🎤 Presentazione"); return; }
+      if (key === "2") { updateStatus("spot"); showToast("📺 Spot pubblicitario"); return; }
+      if (key === "3") { updateStatus("pausa"); showToast("⏸ Pausa"); return; }
+      if (key === "4") { updateStatus("attesa"); showToast("⏳ In attesa"); return; }
+      if (key === "5") { updateStatus("classifica"); showToast("🏆 Classifica finale"); return; }
+      if (key === "6") { updateStatus("fine"); showToast("🏁 Fine serata"); return; }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [updateStatus, getNextSong, showToast]);
+
+  // ── Next song preview ─────────────────────────────────────────────────────
+  const nextSong = getNextSong();
 
   const handleAddSong = async () => {
     if (!title || !artist) return;
@@ -227,21 +413,6 @@ export default function FestivalControlPage() {
     }
   };
 
-  const updateStatus = async (type: StatusType) => {
-    setLoading(true);
-    try {
-      await fetch("/api/festival-status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type, songId: type === "esibizione" || type === "votazione" ? songId : null }),
-      });
-    } catch (error) {
-      console.error("Errore aggiornamento stato", error);
-    } finally {
-      setLoading(false);
-    }
-  };
-
   const handleApprove = async (profileId: number, action: "approve" | "reject") => {
     await fetch("/api/approve-profile", {
       method: "POST",
@@ -256,6 +427,50 @@ export default function FestivalControlPage() {
       <style dangerouslySetInnerHTML={{ __html: adminStyles }} />
       <div className="adm-root">
         <h1 className="adm-title">🎛 Regia Festival</h1>
+
+        {/* ── Shortcut reference card ── */}
+        <div className="adm-card" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+          <div className="adm-section-title">⌨️ Scorciatoie tastiera</div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px" }}>
+            {[
+              { key: "N", label: "Prossima esibizione", color: "rgba(134,239,172,0.9)" },
+              { key: "V", label: "Apri votazione", color: "rgba(196,181,253,0.9)" },
+              { key: "1", label: "Presentazione", color: "rgba(147,197,253,0.9)" },
+              { key: "2", label: "Spot pubblicitario", color: "rgba(253,224,71,0.9)" },
+              { key: "3", label: "Pausa", color: "rgba(255,255,255,0.45)" },
+              { key: "4", label: "In attesa", color: "rgba(255,255,255,0.45)" },
+              { key: "5", label: "Classifica finale", color: "#D4AF37" },
+              { key: "6", label: "Fine serata", color: "rgba(255,100,100,0.85)" },
+            ].map(({ key, label, color }) => (
+              <div key={key} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                <Kbd>{key}</Kbd>
+                <span style={{ fontSize: 12, color }}>{label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Prossima canzone preview */}
+          {nextSong && (
+            <div style={{ marginTop: 14 }}>
+              <div className="adm-next-song">
+                <span style={{ fontSize: 18 }}>⏭</span>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 10, color: "rgba(134,239,172,0.6)", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 2 }}>
+                    Prossima con <Kbd>N</Kbd>
+                  </div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#ededed", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {nextSong.artist} – {nextSong.title}
+                  </div>
+                  {nextSong.performance_time && (
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 2, fontFamily: "monospace" }}>
+                      {new Date(nextSong.performance_time).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
 
         {/* ── Utenti in attesa ── */}
         {pendingProfiles.length > 0 && (
@@ -313,12 +528,24 @@ export default function FestivalControlPage() {
         {/* ── Controlli stato ── */}
         <div className="adm-card">
           <div className="adm-section-title">🎛 Controlli stato</div>
-          <button onClick={() => updateStatus("attesa")} className="adm-btn adm-btn-gray">⏳ In attesa</button>
-          <button onClick={() => updateStatus("presentazione")} className="adm-btn adm-btn-blue">🎤 Presentazione</button>
-          <button onClick={() => updateStatus("spot")} className="adm-btn adm-btn-yellow">📺 Spot Pubblicitario</button>
-          <button onClick={() => updateStatus("pausa")} className="adm-btn adm-btn-gray">⏸ Pausa</button>
-          <button onClick={() => updateStatus("classifica" as StatusType)} className="adm-btn adm-btn-gold">🏆 Classifica finale</button>
-          <button onClick={() => updateStatus("fine")} className="adm-btn adm-btn-red">🏁 Fine serata</button>
+          <button onClick={() => { updateStatus("attesa"); showToast("⏳ In attesa"); }} className="adm-btn adm-btn-gray">
+            <span>⏳ In attesa</span><Kbd>4</Kbd>
+          </button>
+          <button onClick={() => { updateStatus("presentazione"); showToast("🎤 Presentazione"); }} className="adm-btn adm-btn-blue">
+            <span>🎤 Presentazione</span><Kbd>1</Kbd>
+          </button>
+          <button onClick={() => { updateStatus("spot"); showToast("📺 Spot"); }} className="adm-btn adm-btn-yellow">
+            <span>📺 Spot Pubblicitario</span><Kbd>2</Kbd>
+          </button>
+          <button onClick={() => { updateStatus("pausa"); showToast("⏸ Pausa"); }} className="adm-btn adm-btn-gray">
+            <span>⏸ Pausa</span><Kbd>3</Kbd>
+          </button>
+          <button onClick={() => { updateStatus("classifica"); showToast("🏆 Classifica finale"); }} className="adm-btn adm-btn-gold">
+            <span>🏆 Classifica finale</span><Kbd>5</Kbd>
+          </button>
+          <button onClick={() => { updateStatus("fine"); showToast("🏁 Fine serata"); }} className="adm-btn adm-btn-red">
+            <span>🏁 Fine serata</span><Kbd>6</Kbd>
+          </button>
 
           <hr className="adm-divider" />
           <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 10 }}>Seleziona canzone per esibizione / votazione</p>
@@ -326,15 +553,34 @@ export default function FestivalControlPage() {
             value={songId}
             onChange={(e) => setSongId(Number(e.target.value))}
             className="adm-input"
-            style={{ marginBottom: 12 }}
+            style={{ marginBottom: 12, backgroundColor: "#1a1a24", color: "#ededed" }}
           >
-            <option value="">-- Seleziona canzone --</option>
+            <option value="" style={{ background: "#1a1a24" }}>-- Seleziona canzone --</option>
             {songs.map((s) => (
-              <option key={s.id} value={s.id}>{s.artist} – {s.title}</option>
+              <option key={s.id} value={s.id} style={{ background: "#1a1a24" }}>
+                {s.artist} – {s.title}
+                {s.performance_time ? ` (${new Date(s.performance_time).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })})` : ""}
+              </option>
             ))}
           </select>
-          <button onClick={() => updateStatus("esibizione")} className="adm-btn adm-btn-green">▶ Avvia Esibizione</button>
-          <button onClick={() => updateStatus("votazione")} className="adm-btn adm-btn-purple">🗳 Apri Votazione</button>
+          <button onClick={() => {
+            const sid = songId;
+            if (!sid) return;
+            updateStatus("esibizione", sid);
+            const song = songs.find((s) => s.id === sid);
+            showToast(`▶ Esibizione: ${song ? `${song.artist} – ${song.title}` : sid}`);
+          }} className="adm-btn adm-btn-green">
+            <span>▶ Avvia Esibizione</span><Kbd>N</Kbd>
+          </button>
+          <button onClick={() => {
+            const sid = songId;
+            if (!sid) return;
+            updateStatus("votazione", sid);
+            const song = songs.find((s) => s.id === sid);
+            showToast(`🗳 Votazione: ${song ? `${song.artist} – ${song.title}` : sid}`);
+          }} className="adm-btn adm-btn-purple">
+            <span>🗳 Apri Votazione</span><Kbd>V</Kbd>
+          </button>
           {loading && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 10 }}>Aggiornamento in corso…</p>}
         </div>
 
@@ -368,7 +614,6 @@ export default function FestivalControlPage() {
 
           {!lbLoading && leaderboard.length > 0 && (
             <>
-              {/* Media generale */}
               {(() => {
                 const withVotes = leaderboard.filter((s) => s.average !== null);
                 if (withVotes.length === 0) return null;
@@ -385,7 +630,6 @@ export default function FestivalControlPage() {
                 );
               })()}
 
-              {/* Righe classifica */}
               {leaderboard.map((song, i) => {
                 const hasVotes = song.average !== null;
                 const isFirst = hasVotes && i === 0;
@@ -396,62 +640,23 @@ export default function FestivalControlPage() {
 
                 return (
                   <div key={song.id} className={rowClass}>
-                    {/* Posizione */}
-                    <div style={{
-                      fontFamily: "'DM Mono', monospace",
-                      fontSize: isFirst ? 14 : 11,
-                      color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)",
-                      width: 22,
-                      textAlign: "center",
-                      flexShrink: 0,
-                    }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 14 : 11, color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)", width: 22, textAlign: "center", flexShrink: 0 }}>
                       {hasVotes ? (isFirst ? "🏆" : i + 1) : "—"}
                     </div>
-
-                    {/* Titolo + artista */}
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{
-                        fontSize: 13,
-                        fontWeight: isFirst ? 700 : 500,
-                        color: hasVotes ? "#ededed" : "rgba(255,255,255,0.3)",
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}>
+                      <div style={{ fontSize: 13, fontWeight: isFirst ? 700 : 500, color: hasVotes ? "#ededed" : "rgba(255,255,255,0.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                         {song.title}
                       </div>
-                      <div style={{
-                        fontSize: 10,
-                        color: isFirst ? "rgba(212,175,55,0.6)" : "rgba(255,255,255,0.25)",
-                        letterSpacing: "0.05em",
-                        textTransform: "uppercase",
-                        marginTop: 1,
-                      }}>
+                      <div style={{ fontSize: 10, color: isFirst ? "rgba(212,175,55,0.6)" : "rgba(255,255,255,0.25)", letterSpacing: "0.05em", textTransform: "uppercase", marginTop: 1 }}>
                         {song.artist}
                       </div>
                     </div>
-
-                    {/* Voti count */}
                     {hasVotes && (
-                      <div style={{
-                        fontSize: 10,
-                        color: "rgba(255,255,255,0.22)",
-                        fontFamily: "'DM Mono', monospace",
-                        flexShrink: 0,
-                        marginRight: 8,
-                      }}>
+                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.22)", fontFamily: "'DM Mono', monospace", flexShrink: 0, marginRight: 8 }}>
                         {song.voteCount}v
                       </div>
                     )}
-
-                    {/* Media */}
-                    <div style={{
-                      fontFamily: "'DM Mono', monospace",
-                      fontSize: isFirst ? 18 : 15,
-                      fontWeight: isFirst ? 700 : 400,
-                      color: isFirst ? "#D4AF37" : hasVotes ? "#ededed" : "rgba(255,255,255,0.15)",
-                      flexShrink: 0,
-                    }}>
+                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 18 : 15, fontWeight: isFirst ? 700 : 400, color: isFirst ? "#D4AF37" : hasVotes ? "#ededed" : "rgba(255,255,255,0.15)", flexShrink: 0 }}>
                       {hasVotes ? song.average!.toFixed(1) : "—"}
                     </div>
                   </div>
@@ -467,6 +672,13 @@ export default function FestivalControlPage() {
           )}
         </div>
       </div>
+
+      {/* ── Toast ── */}
+      {toast && (
+        <div className={`adm-toast${toast.out ? " adm-toast-out" : ""}`}>
+          {toast.text}
+        </div>
+      )}
     </>
   );
 }

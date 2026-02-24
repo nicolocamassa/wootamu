@@ -90,7 +90,7 @@ export default function Header({ isRoom, usersCount, festivalType: festivalTypeP
               </span>
             )}
             {usersCount !== undefined && (
-              <span className="px-2 py-0.5 bg-stone-900 rounded-full text-stone-400 text-xs">
+              <span className="px-2 py-0.5 bg-stone-900 rounded-full text-stone-600 text-xs">
                 {usersCount} online
               </span>
             )}

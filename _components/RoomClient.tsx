@@ -1,12 +1,13 @@
 "use client";
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import CurrentEvent from "./CurrentEvent";
 import SongList from "./SongList";
 import InteractBox from "./InteractBox";
 import Header from "./Header";
-import { pusherClient } from "@/_lib/pusherClient";
+import { festivalChannel } from "@/_lib/pusherClient";
 
 type Vote = { id: number; user_id: number; value: number };
+type UserRoom = { code: string; id: number; event: string | null; userToken: string };
 type Song = { id: number; title: string; artist: string; votes: Vote[] };
 type User = { id: number; username: string; isHost: boolean; userToken: string };
 type Room = { code: string; users: User[]; songs: Song[] };
@@ -21,43 +22,60 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
   const [currentSongId, setCurrentSongId] = useState<number | null>(null);
   const [hasCommented, setHasCommented] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
+  const [userToken, setUserToken] = useState<string | null>(null);
+  const [userRooms, setUserRooms] = useState<UserRoom[]>([]);
 
   const topRef = useRef<HTMLDivElement>(null);
-  const [topHeight, setTopHeight] = useState<number | null>(null);
 
+  // Leggi il token una volta sola
+  useEffect(() => {
+    setUserToken(localStorage.getItem("userToken"));
+  }, []);
+
+  // Misura altezza blocco superiore
   useEffect(() => {
     const el = topRef.current;
     if (!el) return;
-    const update = () => setTopHeight(el.getBoundingClientRect().bottom);
-    update();
-    const ro = new ResizeObserver(update);
+    const ro = new ResizeObserver(() => {});
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  const userToken = typeof window !== "undefined" ? localStorage.getItem("userToken") : null;
-
-  const fetchRoom = async () => {
+  // FIX: useCallback per referenza stabile — non cambia ad ogni render
+  // evita il ciclo unbind/rebind in CurrentEvent e nel proprio useEffect
+  const fetchRoom = useCallback(async () => {
+    const token = localStorage.getItem("userToken");
+    if (!token) return;
     try {
-      if (!userToken) return;
       const res = await fetch(`/api/get-room?code=${roomCode}`, {
-        headers: { Authorization: `Bearer ${userToken}` },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error();
       const data = await res.json();
       setRoom(data.room);
-    } catch (err) { console.error(err); }
-  };
+      if (data.userRooms) setUserRooms(data.userRooms);
+    } catch (err) {
+      console.error("[fetchRoom] errore:", err);
+    }
+  }, [roomCode]);
 
+  // Fetch iniziale + Pusher — usa festivalChannel condiviso, non risottoscrive
   useEffect(() => {
+    if (!userToken) return;
+
     fetchRoom();
-    const channel = pusherClient.subscribe("festival");
+
     const handleRoomUpdate = ({ roomCode: updatedCode }: { roomCode: string }) => {
       if (updatedCode === roomCode) fetchRoom();
     };
-    channel.bind("room-update", handleRoomUpdate);
-    return () => { channel.unbind("room-update", handleRoomUpdate); };
-  }, [roomCode]);
+
+    // FIX: usa il canale condiviso già sottoscritto, non ne crea uno nuovo
+    festivalChannel.bind("room-update", handleRoomUpdate);
+
+    return () => {
+      festivalChannel.unbind("room-update", handleRoomUpdate);
+    };
+  }, [userToken, roomCode]);
 
   useEffect(() => {
     setHasCommented(false);
@@ -65,8 +83,8 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
     setHasVoted(false);
   }, [currentSongId]);
 
+  if (!userToken) return <p>Caricamento...</p>;
   if (!room) return <p>Caricamento stanza...</p>;
-  if (!userToken) return <p>Errore: token non trovato</p>;
 
   const currentUser = room.users.find((u) => u.userToken === userToken);
 
@@ -87,6 +105,7 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
             votes={currentVotes}
             currentUser={currentUser}
             hasVoted={hasVoted}
+            onUserJoined={fetchRoom}
           />
         </div>
 
@@ -114,7 +133,7 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{
-                      background: hasVotedU && !showResults
+                      background: hasVotedU
                         ? "rgb(134,239,172)"
                         : isMe ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
                     }}
@@ -140,6 +159,7 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
           onSongIdChange={setCurrentSongId}
           onVotesChange={setCurrentVotes}
           onHasVotedChange={setHasVoted}
+          userRooms={userRooms}
         />
       </div>
     </div>

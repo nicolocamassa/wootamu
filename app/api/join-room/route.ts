@@ -11,7 +11,6 @@ export async function POST(req: Request) {
       return new Response(JSON.stringify({ error: "Dati mancanti" }), { status: 400 });
     }
 
-    // Ricava il profilo dal token o dal token temporaneo
     let profile;
     if (userToken.startsWith("profile_")) {
       const profileId = parseInt(userToken.replace("profile_", ""));
@@ -33,10 +32,11 @@ export async function POST(req: Request) {
       return new Response(JSON.stringify({ error: "Stanza non trovata" }), { status: 404 });
     }
 
-    // Cerca o crea l'utente nella stanza
     let user = await prisma.user.findFirst({
       where: { profile_id: profile.id, room_id: room.id },
     });
+
+    const isNewUser = !user;
 
     if (!user) {
       user = await prisma.user.create({
@@ -50,14 +50,24 @@ export async function POST(req: Request) {
       });
     }
 
+    // Aggiorna la lista utenti nella stanza per tutti
     await pusher.trigger("festival", "room-update", { roomCode: code });
+
+    // Notifica visibile in CurrentEvent solo se è un nuovo ingresso
+    if (isNewUser) {
+      await pusher.trigger("festival", "room-notification", {
+        roomCode: code,
+        type: "join",
+        text: `${profile.username} è entrato nella stanza 👋`,
+      });
+    }
 
     return new Response(JSON.stringify({ room, userToken: user.userToken }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
   } catch (err) {
-    console.error(err);
+    console.error("[join-room] errore:", err);
     return new Response(JSON.stringify({ error: "Errore server" }), { status: 500 });
   }
 }

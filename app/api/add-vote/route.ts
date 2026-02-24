@@ -10,37 +10,63 @@ export async function POST(req: Request) {
       return new Response(JSON.stringify({ error: "Parametri mancanti" }), { status: 400 });
     }
 
-    const room = await prisma.room.findUnique({
-      where: { code: roomCode },
-      include: { users: true },
+    // Trova l'utente nella stanza principale
+    const user = await prisma.user.findUnique({
+      where: { userToken },
+      include: { profile: true },
     });
-    if (!room) return new Response(JSON.stringify({ error: "Stanza non trovata" }), { status: 404 });
 
-    const user = room.users.find(u => u.userToken === userToken);
-    if (!user) return new Response(JSON.stringify({ error: "Utente non autorizzato" }), { status: 403 });
-
-    const existingVote = await prisma.vote.findFirst({
-      where: {
-        user_id: user.id,
-        song_id: songId,
-      },
-    });
-    if (existingVote) {
-      return new Response(JSON.stringify({ error: "Hai già votato questa canzone" }), { status: 400 });
+    if (!user) {
+      return new Response(JSON.stringify({ error: "Utente non autorizzato" }), { status: 403 });
     }
 
-    const vote = await prisma.vote.create({
-      data: {
-        value,
-        user_id: user.id,
-        song_id: songId,
-      },
+    // Trova tutte le istanze utente dello stesso profilo (tutte le stanze)
+    const allUserInstances = await prisma.user.findMany({
+      where: { profile_id: user.profile_id },
+      include: { room: true },
     });
 
-    // Notifica tutti i client connessi
-    await pusher.trigger("festival", "vote-update", { songId, roomCode });
+    const results = [];
 
-    return new Response(JSON.stringify({ vote }), {
+    for (const instance of allUserInstances) {
+      // Controlla se ha già votato questa canzone in questa stanza
+      const existingVote = await prisma.vote.findFirst({
+        where: {
+          user_id: instance.id,
+          song_id: songId,
+        },
+      });
+
+      if (!existingVote) {
+        const vote = await prisma.vote.create({
+          data: {
+            value,
+            user_id: instance.id,
+            song_id: songId,
+          },
+        });
+        results.push(vote);
+
+        // Aggiorna i voti in tempo reale per tutti
+        await pusher.trigger("festival", "vote-update", {
+          songId,
+          roomCode: instance.room.code,
+        });
+
+        // Notifica testuale visibile in CurrentEvent
+        // voterUserId permette a CurrentEvent di nascondere la notifica a chi ha votato
+        // e di mostrare/nascondere il valore numerico in base allo stato di voto degli altri
+        await pusher.trigger("festival", "room-notification", {
+          roomCode: instance.room.code,
+          type: "vote",
+          text: `${user.username} ha votato ✅`,
+          voteValue: value,
+          voterUserId: instance.id,
+        });
+      }
+    }
+
+    return new Response(JSON.stringify({ votes: results }), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });

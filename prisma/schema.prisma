@@ -82,7 +82,7 @@ model Comment {
 
 model Vote {
   id         Int      @id @default(autoincrement())
-  value      Int
+  value      Float
   user_id    Int
   song_id    Int
   created_at DateTime @default(now())

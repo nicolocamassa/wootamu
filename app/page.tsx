@@ -161,9 +161,12 @@ export default function Home() {
 
       {/* Bottoni in basso */}
       <div className="text-center" style={{ flexShrink: 0, padding: "16px 20px 32px", display: "flex", flexDirection: "column", gap: 8 }}>
-        <Button href="/join-room">Entra in un party</Button>
-        <Button href="/create-room" color="secondary">Crea un nuovo party</Button>
-      </div>
+  <Button href="/join-room">Entra in un party</Button>
+  <Button href="/create-room" color="secondary">Crea un nuovo party</Button>
+  {!loggedNickname && (
+    <Button href="/login" color="secondary">Accedi</Button>
+  )}
+</div>
     </div>
   );
 }

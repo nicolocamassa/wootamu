@@ -221,7 +221,7 @@ export function Classifica({
           {roomCompat !== null && (
             <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "12px 14px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 500 }}>Con la stanza</span>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 500 }}>Stanza</span>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
                   <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 22, color: compatColor(roomCompat), lineHeight: 1 }}>
                     {roomCompat}%

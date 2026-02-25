@@ -11,14 +11,15 @@ model Room {
   id              Int      @id @default(autoincrement())
   code            String   @unique
   event           String?
+  night           Int?     // serata attiva: 1, 2, 3… — impostata dall'admin
   current_status  String?
   current_song_id Int?
   created_at      DateTime @default(now())
 
-  current_song Song?  @relation("CurrentSong", fields: [current_song_id], references: [id])
+  current_song Song?     @relation("CurrentSong", fields: [current_song_id], references: [id])
   users        User[]
-  songs        Song[] @relation("RoomSongs")
-  comments Comment[]
+  songs        Song[]    @relation("RoomSongs")
+  comments     Comment[]
 }
 
 model Profile {
@@ -50,19 +51,21 @@ model Song {
   id               Int       @id @default(autoincrement())
   title            String
   artist           String
+  artist_canonical String?
   image_url        String?
   image_url_nobg   String?
   room_id          Int?
   performance_time DateTime?
-  performed        Boolean   @default(false) // <-- aggiunto
+  performed        Boolean   @default(false)
   created_at       DateTime  @default(now())
 
-  room       Room?      @relation("RoomSongs", fields: [room_id], references: [id])
-  current_in Room[]     @relation("CurrentSong")
-  votes      Vote[]
-  reactions  Reaction[]
-  comments   Comment[]
-  festivalStatuses FestivalStatus[]
+  room                 Room?            @relation("RoomSongs", fields: [room_id], references: [id])
+  current_in           Room[]           @relation("CurrentSong")
+  votes                Vote[]
+  reactions            Reaction[]
+  comments             Comment[]
+  festivalStatuses     FestivalStatus[] @relation("CurrentSong")
+  lastFestivalStatuses FestivalStatus[] @relation("LastSong")
 }
 
 model Comment {
@@ -85,6 +88,7 @@ model Vote {
   value      Float
   user_id    Int
   song_id    Int
+  night      Int?
   created_at DateTime @default(now())
 
   user User @relation(fields: [user_id], references: [id])
@@ -103,10 +107,12 @@ model Reaction {
 }
 
 model FestivalStatus {
-  id        Int      @id @default(1)
-  type      String
-  songId    Int?
-  updatedAt DateTime @updatedAt
+  id         Int      @id @default(1)
+  type       String
+  songId     Int?
+  lastSongId Int?
+  updatedAt  DateTime @updatedAt
 
-  song Song? @relation(fields: [songId], references: [id])
+  song     Song? @relation("CurrentSong", fields: [songId], references: [id])
+  lastSong Song? @relation("LastSong", fields: [lastSongId], references: [id])
 }

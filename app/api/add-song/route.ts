@@ -1,36 +1,29 @@
+// /api/add-song/route.ts
 import { prisma } from "@/_lib/prisma";
+import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const { title, artist, performanceTime, imageUrl, imageUrlNobg } = body;
+    const { title, artist, artistCanonical, performanceTime, imageUrl, imageUrlNobg } = await req.json();
 
     if (!title || !artist) {
-      return new Response(JSON.stringify({ error: "Titolo e artista obbligatori" }), {
-        status: 400,
-        headers: { "Content-Type": "application/json" },
-      });
+      return NextResponse.json({ error: "title e artist sono obbligatori" }, { status: 400 });
     }
 
-    const newSong = await prisma.song.create({
+    const song = await prisma.song.create({
       data: {
         title,
         artist,
-        image_url: imageUrl ?? null, 
-        image_url_nobg: imageUrlNobg ?? null,
+        artist_canonical: artistCanonical ?? null,
         performance_time: performanceTime ? new Date(performanceTime) : null,
+        image_url: imageUrl ?? null,
+        image_url_nobg: imageUrlNobg ?? null,
       },
     });
 
-    return new Response(JSON.stringify(newSong), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Errore durante l'aggiunta della canzone:", error);
-    return new Response(JSON.stringify({ error: "Errore interno del server" }), {
-      status: 500,
-      headers: { "Content-Type": "application/json" },
-    });
+    return NextResponse.json(song, { status: 201 });
+  } catch (err) {
+    console.error("Errore add-song:", err);
+    return NextResponse.json({ error: "Errore interno server" }, { status: 500 });
   }
 }

@@ -1,5 +1,5 @@
 "use client";
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef } from "react";
 import CurrentEvent from "./CurrentEvent";
 import SongList from "./SongList";
 import InteractBox from "./InteractBox";
@@ -26,6 +26,7 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
   const [userRooms, setUserRooms] = useState<UserRoom[]>([]);
 
   const topRef = useRef<HTMLDivElement>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
   // Leggi il token una volta sola
   useEffect(() => {
@@ -36,14 +37,13 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
   useEffect(() => {
     const el = topRef.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => {});
+    const ro = new ResizeObserver(() => {}); // solo per forzare re-render se serve
     ro.observe(el);
     return () => ro.disconnect();
   }, []);
 
-  // FIX: useCallback per referenza stabile — non cambia ad ogni render
-  // evita il ciclo unbind/rebind in CurrentEvent e nel proprio useEffect
-  const fetchRoom = useCallback(async () => {
+  // fetchRoom usa sempre il token fresco da localStorage (evita stale closure)
+  const fetchRoom = async () => {
     const token = localStorage.getItem("userToken");
     if (!token) return;
     try {
@@ -57,23 +57,33 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
     } catch (err) {
       console.error("[fetchRoom] errore:", err);
     }
-  }, [roomCode]);
+  };
 
-  // Fetch iniziale + Pusher — usa festivalChannel condiviso, non risottoscrive
+  // Fetch iniziale + Pusher — tutto insieme, parte quando userToken è pronto
   useEffect(() => {
     if (!userToken) return;
 
     fetchRoom();
 
+    // ── Polling leggero ogni 10s come safety net ─────────────────────────
+    pollingRef.current = setInterval(fetchRoom, 10000);
+
+    // ── Refetch quando l'utente torna sulla tab o app in foreground ──────
+    const handleVisibility = () => {
+      if (document.visibilityState === "visible") fetchRoom();
+    };
+    document.addEventListener("visibilitychange", handleVisibility);
+
     const handleRoomUpdate = ({ roomCode: updatedCode }: { roomCode: string }) => {
       if (updatedCode === roomCode) fetchRoom();
     };
 
-    // FIX: usa il canale condiviso già sottoscritto, non ne crea uno nuovo
     festivalChannel.bind("room-update", handleRoomUpdate);
 
     return () => {
       festivalChannel.unbind("room-update", handleRoomUpdate);
+      document.removeEventListener("visibilitychange", handleVisibility);
+      if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [userToken, roomCode]);
 
@@ -105,7 +115,6 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
             votes={currentVotes}
             currentUser={currentUser}
             hasVoted={hasVoted}
-            onUserJoined={fetchRoom}
           />
         </div>
 

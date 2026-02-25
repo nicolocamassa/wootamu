@@ -1,64 +1,17 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
-// FIX: importa il canale condiviso invece di usare pusherClient direttamente
+// InteractBox.tsx
+
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Mic2, Tv, PauseCircle, Clock, Star, Trophy, Heart } from "lucide-react";
+
 import { onFestivalEvent } from "@/_lib/pusherClient";
-import { Mic2, Tv, PauseCircle, Clock, Star, Trophy, RadioTower } from "lucide-react";
-
-type Vote = {
-  id: number;
-  user_id: number;
-  value: number;
-};
-
-type Song = {
-  id: number;
-  title: string;
-  artist: string;
-  image_url?: string;
-  image_url_nobg?: string;
-  votes: Vote[];
-};
-
-type FestivalStatus = {
-  type: "attesa" | "presentazione" | "esibizione" | "votazione" | "spot" | "pausa" | "classifica" | "fine";
-  songId?: number | null;
-  song?: Song | null;
-};
-
-type User = {
-  id: number;
-  username: string;
-};
-
-type Comment = {
-  id: number;
-  text: string;
-  likes: number;
-  dislikes: number;
-  user: { username: string };
-};
-
-type FloatingReaction = {
-  id: number;
-  emoji: string;
-  x: number;
-};
-
-type UserReactionsMap = Record<number, Record<string, number>>;
-
-const REACTIONS = [
-  { type: "skull",  emoji: "💀" },
-  { type: "fire",   emoji: "🔥" },
-  { type: "heart",  emoji: "❤️" },
-  { type: "clap",   emoji: "👏" },
-  { type: "laugh",  emoji: "😂" },
-  { type: "cringe", emoji: "🫣" },
-];
-
-// ── tipi multi-room ──────────────────────────────────────────────────
-type UserRoom = { code: string; id: number; event: string | null; userToken: string };
-type RoomVotes = { [roomCode: string]: Vote[] };
-type RoomUsers = { [roomCode: string]: User[] };
+import { useFestival } from "./UseFestival";
+import { useVoting } from "./UseVoting";
+import { useComments } from "./UseComments";
+import { useReactions, REACTIONS } from "./UseReactions";
+import { Classifica } from "./Classifica";
+import { VotingBox } from "./VotingBox";
+import type { User, UserRoom, Vote } from "./types";
 
 type InteractBoxProps = {
   roomCode: string;
@@ -75,210 +28,45 @@ type InteractBoxProps = {
 };
 
 const RESULTS_DURATION = 60;
+const VOTING_OPEN_STATES = ["votazione", "presentazione", "spot", "pausa"];
 
 const styles = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
 
   .ib-root { font-family: 'Inter', sans-serif; }
-
-  .ib-card {
-    background: #0F0F14;
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 18px;
-    overflow: hidden;
-    position: relative;
-    flex: 1;
-  }
-
-  @keyframes ib-fadein {
-    from { opacity: 0; transform: translateY(5px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
+  .ib-card { background: #0F0F14; border: 1px solid rgba(255,255,255,0.07); border-radius: 18px; overflow: hidden; position: relative; flex: 1; }
+  @keyframes ib-fadein { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
   .ib-fadein { animation: ib-fadein 0.35s ease both; }
-
-  @keyframes ib-shake {
-    0%, 100% { transform: translateX(0); }
-    20%       { transform: translateX(-5px); }
-    40%       { transform: translateX(5px); }
-    60%       { transform: translateX(-4px); }
-    80%       { transform: translateX(4px); }
-  }
-  .ib-shake { animation: ib-shake 0.35s ease both; }
-
-  .ib-btn {
-    width: 100%;
-    padding: 15px;
-    border-radius: 14px;
-    border: none;
-    font-family: 'Inter', sans-serif;
-    font-weight: 700;
-    font-size: 13px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    transition: opacity 0.2s;
-  }
+  .ib-btn { width: 100%; padding: 15px; border-radius: 14px; border: none; font-family: 'Inter', sans-serif; font-weight: 700; font-size: 13px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; transition: opacity 0.2s; }
   .ib-btn-gold { background: #D4AF37; color: #0F0F14; }
   .ib-btn-gold:hover { opacity: 0.88; }
+  .ib-btn-gold:disabled { opacity: 0.6; cursor: not-allowed; }
   .ib-btn-muted { background: #1A1A22; color: rgba(255,255,255,0.2); cursor: not-allowed; }
   .ib-btn-live { background: #1A1A22; color: rgba(255,255,255,0.5); cursor: pointer; }
   .ib-btn-live:hover { color: rgba(255,255,255,0.75); }
-  .ib-btn-danger {
-    background: rgba(220,60,60,0.15);
-    color: rgba(255,100,100,0.85);
-    border: 1px solid rgba(220,60,60,0.25);
-    cursor: pointer;
-  }
-  .ib-btn-danger:hover { background: rgba(220,60,60,0.22); }
-
-  .ib-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 2px;
-    border-radius: 2px;
-    outline: none;
-    cursor: pointer;
-  }
-  .ib-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 20px; height: 20px;
-    border-radius: 50%;
-    background: #ffffff;
-    cursor: pointer;
-    box-shadow: 0 1px 6px rgba(0,0,0,0.6);
-    transition: transform 0.15s;
-  }
-  .ib-slider::-webkit-slider-thumb:hover {
-    transform: scale(1.1);
-    box-shadow: 0 1px 8px rgba(0,0,0,0.7);
-  }
-
-  .ib-row {
-    display: flex; align-items: center; gap: 10px;
-    padding: 9px 12px; border-radius: 10px;
-    border: 1px solid transparent;
-  }
+  .ib-slider { -webkit-appearance: none; appearance: none; width: 100%; height: 2px; border-radius: 2px; outline: none; cursor: pointer; }
+  .ib-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: #ffffff; cursor: pointer; box-shadow: 0 1px 6px rgba(0,0,0,0.6); transition: transform 0.15s; }
+  .ib-slider::-webkit-slider-thumb:hover { transform: scale(1.1); }
+  .ib-row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; border: 1px solid transparent; }
   .ib-row-me { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.09); }
   .ib-row-other { background: rgba(255,255,255,0.02); }
   .ib-row-first { background: rgba(212,175,55,0.08); border-color: rgba(212,175,55,0.25); }
-
-  .ib-toast {
-    position: absolute; top: 12px; left: 12px; right: 12px; z-index: 20;
-    background: rgba(15,15,20,0.88); backdrop-filter: blur(12px);
-    border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
-    padding: 10px 12px; animation: ib-fadein 0.3s ease both;
-  }
-
-  .ib-song-overlay {
-    position: absolute; bottom: 0; left: 0; right: 0; padding: 18px;
-    background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, transparent 100%);
-  }
-
-  .ib-status-icon {
-    width: 40px; height: 40px; border-radius: 12px;
-    background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07);
-    display: flex; align-items: center; justify-content: center;
-    font-size: 18px; margin: 0 auto 14px;
-  }
-
-  .ib-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 3px 9px; border-radius: 999px;
-    font-size: 10px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase;
-    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
-    color: rgba(255,255,255,0.45);
-  }
-
-  @keyframes ib-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.25; } }
-  .ib-dot {
-    width: 5px; height: 5px; border-radius: 50%;
-    background: rgba(255,255,255,0.5);
-    animation: ib-pulse 2.5s ease-in-out infinite;
-  }
-
-  .ib-reaction-bar {
-    display: flex; gap: 8px; align-items: center;
-    background: #0F0F14; border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 14px; padding: 10px 14px;
-    overflow-x: auto; scrollbar-width: none; -ms-overflow-style: none;
-  }
-  .ib-reaction-bar::-webkit-scrollbar { display: none; }
-  .ib-reaction-btn {
-    display: flex; flex-direction: column; align-items: center; gap: 2px;
-    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 10px; padding: 8px 10px; cursor: pointer; flex-shrink: 0;
-    transition: background 0.15s, transform 0.1s;
-    font-size: 20px; line-height: 1; user-select: none;
-  }
+  .ib-toast { position: absolute; top: 12px; left: 12px; right: 12px; z-index: 20; background: rgba(15,15,20,0.88); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 10px 12px; animation: ib-fadein 0.3s ease both; }
+  .ib-song-overlay { position: absolute; bottom: 0; left: 0; right: 0; padding: 18px; background: linear-gradient(to top, rgba(0,0,0,0.88) 0%, transparent 100%); }
+  .ib-status-icon { width: 40px; height: 40px; border-radius: 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); display: flex; align-items: center; justify-content: center; font-size: 18px; margin: 0 auto 14px; }
+  .ib-pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 9px; border-radius: 999px; font-size: 10px; font-weight: 500; letter-spacing: 0.07em; text-transform: uppercase; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: rgba(255,255,255,0.45); }
+  @keyframes ib-pulse { 0%,100% { opacity:1; } 50% { opacity:0.25; } }
+  .ib-dot { width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.5); animation: ib-pulse 2.5s ease-in-out infinite; }
+  .ib-reaction-bar { display: flex; gap: 8px; align-items: center; justify-content: center; background: #0F0F14; border: 1px solid rgba(255,255,255,0.07); border-radius: 14px; padding: 10px 14px; }
+  .ib-reaction-btn { display: flex; flex-direction: column; align-items: center; gap: 2px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.07); border-radius: 10px; padding: 8px 10px; cursor: pointer; flex: 1; transition: background 0.15s, transform 0.1s; font-size: 20px; line-height: 1; user-select: none; }
   .ib-reaction-btn:active { transform: scale(0.88); background: rgba(255,255,255,0.1); }
-
-  @keyframes ib-float {
-    0%   { opacity: 1;   transform: translateY(0)     rotate(var(--r)) scale(1); }
-    80%  { opacity: 0.8; transform: translateY(-130px) rotate(var(--r)) scale(1.05); }
-    100% { opacity: 0;   transform: translateY(-170px) rotate(var(--r)) scale(0.8); }
-  }
-  .ib-float {
-    position: absolute; bottom: 60px; font-size: 20px;
-    pointer-events: none; animation: ib-float 2.2s ease-out forwards;
-    z-index: 30; line-height: 1;
-  }
-
-  @keyframes ib-combo-pop { 0% { transform: scale(1.4); opacity: 1; } 100% { transform: scale(1); opacity: 1; } }
-  .ib-combo {
-    position: absolute; top: 12px; left: 12px; z-index: 25;
-    display: flex; align-items: center; gap: 5px;
-    background: rgba(0,0,0,0.55); backdrop-filter: blur(8px);
-    border: 1px solid rgba(255,255,255,0.1); border-radius: 999px;
-    padding: 4px 10px 4px 7px; animation: ib-combo-pop 0.2s ease both;
-  }
-
-  .ib-react-btn {
-    display: flex; align-items: center; gap: 4px;
-    font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 8px;
-    border: none; background: rgba(255,255,255,0.06); cursor: pointer;
-    color: rgba(255,255,255,0.5); font-family: 'Inter', sans-serif;
-    transition: background 0.15s;
-  }
+  @keyframes ib-float { 0% { opacity:1; transform: translateY(0) rotate(var(--r)) scale(1); } 80% { opacity:0.8; transform: translateY(-180px) rotate(var(--r)) scale(1.1); } 100% { opacity:0; transform: translateY(-240px) rotate(var(--r)) scale(0.8); } }
+  .ib-float { position: absolute; bottom: 60px; font-size: 28px; pointer-events: none; animation: ib-float 2.2s ease-out forwards; z-index: 30; line-height: 1; }
+  @keyframes ib-combo-pop { 0% { transform: scale(1.4); } 100% { transform: scale(1); } }
+  .ib-combo { position: absolute; top: 12px; left: 12px; z-index: 25; display: flex; align-items: center; gap: 5px; background: rgba(0,0,0,0.55); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); border-radius: 999px; padding: 4px 10px 4px 7px; animation: ib-combo-pop 0.2s ease both; }
+  .ib-react-btn { display: flex; align-items: center; gap: 4px; font-size: 12px; font-weight: 500; padding: 3px 8px; border-radius: 8px; border: none; background: rgba(255,255,255,0.06); cursor: pointer; color: rgba(255,255,255,0.5); font-family: 'Inter', sans-serif; transition: background 0.15s; }
   .ib-react-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.75); }
-
-  @keyframes ib-overlay-in {
-    from { opacity: 0; transform: translateY(6px); }
-    to   { opacity: 1; transform: translateY(0); }
-  }
-  .ib-skip-overlay {
-    position: absolute; inset: 0; z-index: 40;
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    gap: 10px; padding: 24px;
-    background: rgba(15,15,20,0.92); backdrop-filter: blur(10px);
-    animation: ib-overlay-in 0.25s ease both;
-  }
-
-  @keyframes ib-gold-glow {
-    0%, 100% { box-shadow: 0 0 0px rgba(212,175,55,0); border-color: rgba(212,175,55,0.2); }
-    50%       { box-shadow: 0 0 18px rgba(212,175,55,0.18); border-color: rgba(212,175,55,0.45); }
-  }
-  .ib-card-gold { animation: ib-gold-glow 2.5s ease-in-out infinite; }
-
-  @keyframes ib-count-pop {
-    0%   { opacity: 0; transform: scale(1.4); }
-    40%  { opacity: 1; transform: scale(0.95); }
-    100% { opacity: 1; transform: scale(1); }
-  }
-
-  /* room tabs */
-  .ib-room-tabs {
-    display: flex; gap: 6px; padding: 0 14px 12px;
-    overflow-x: auto; flex-shrink: 0; scrollbar-width: none;
-  }
-  .ib-room-tab {
-    padding: 5px 12px; border-radius: 999px; border: 1px solid;
-    font-size: 10px; font-family: 'DM Mono', monospace; font-weight: 500;
-    cursor: pointer; flex-shrink: 0; transition: all 0.15s; white-space: nowrap;
-    background: none;
-  }
-  .ib-room-tab-active { background: rgba(212,175,55,0.15) !important; color: #D4AF37; border-color: rgba(212,175,55,0.3); }
-  .ib-room-tab-inactive { color: rgba(255,255,255,0.35); border-color: rgba(255,255,255,0.07); }
+  @keyframes ib-bubble-in { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
 `;
 
 function StatusScreen({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
@@ -292,605 +80,284 @@ function StatusScreen({ icon, title, sub }: { icon: React.ReactNode; title: stri
 }
 
 export default function InteractBox({
-  roomCode,
-  currentUser,
-  users,
-  userToken,
-  onVotedUsersChange,
-  onShowResults,
-  onFestivalTypeChange,
-  onSongIdChange,
-  onVotesChange,
-  onHasVotedChange,
+  roomCode, currentUser, users, userToken,
+  onVotedUsersChange, onShowResults, onFestivalTypeChange,
+  onSongIdChange, onVotesChange, onHasVotedChange,
   userRooms = [],
 }: InteractBoxProps) {
-  const [festivalState, setFestivalState] = useState<FestivalStatus | null>(null);
-  const [voteValue, setVoteValue] = useState<number>(5);
-  const [hasVoted, setHasVoted] = useState(false);
+
+  const [showResults, setShowResults] = useState(false);
   const [hasSkipped, setHasSkipped] = useState(false);
-  const [skipConfirm, setSkipConfirm] = useState(false);
-  const [displayVotes, setDisplayVotes] = useState<Vote[]>([]);
-  const songIdForVotesRef = useRef<number | null>(null);
-  const [finalLeaderboard, setFinalLeaderboard] = useState<{ id: number; title: string; artist: string; average: number | null; voteCount: number }[]>([]);
+  const [sliderTouched, setSliderTouched] = useState(false);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const countdownRef = useRef<NodeJS.Timeout | null>(null);
+  const [activeRoomIndex, setActiveRoomIndex] = useState(0);
+  const [roomVotes, setRoomVotes] = useState<Record<string, Vote[]>>({});
+  const [roomUsers, setRoomUsers] = useState<Record<string, User[]>>({});
+  const showResultsRef = useRef(false);
+
+  // Classifica finale
+  type FinalEntry = { id: number; title: string; artist: string; average: number | null; voteCount: number };
+  const [finalLeaderboard, setFinalLeaderboard] = useState<FinalEntry[]>([]);
   const [finalCountdown, setFinalCountdown] = useState<number | null>(null);
   const [showFinalLeaderboard, setShowFinalLeaderboard] = useState(false);
-  const [lbView, setLbView] = useState<"stanza" | "mia">("stanza");
   const [myVotes, setMyVotes] = useState<{ songId: number; value: number }[]>([]);
+  const [allRoomVotes, setAllRoomVotes] = useState<{ id: number; user_id: number; song_id: number; value: number }[]>([]);
+  const [lbView, setLbView] = useState<"stanza" | "mia" | "affinita">("stanza");
+  const [lbMode, setLbMode] = useState<"serata" | "cumulativa">("serata");
+  const [cumulativeLeaderboard, setCumulativeLeaderboard] = useState<(FinalEntry & { rawAverage?: number })[]>([]);
   const finalCountdownRef = useRef<NodeJS.Timeout | null>(null);
-  const [showResults, setShowResults] = useState(false);
-  // FIX Bug2: A può vedere la classifica in sola lettura anche prima di votare
-  const [showResultsReadOnly, setShowResultsReadOnly] = useState(false);
-  const [timeLeft, setTimeLeft] = useState<number | null>(null);
-  const [hasPendingState, setHasPendingState] = useState(false);
-  const [comments, setComments] = useState<Comment[]>([]);
-  const [visibleComment, setVisibleComment] = useState<Comment | null>(null);
-  const [floatingReactions, setFloatingReactions] = useState<FloatingReaction[]>([]);
-  const [combo, setCombo] = useState<{ emoji: string; count: number } | null>(null);
-  const [userReactions, setUserReactions] = useState<UserReactionsMap>({});
-  const comboTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const floatIdRef = useRef(0);
-  const reactionCooldownRef = useRef<Record<string, boolean>>({});
-  const commentTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const shownCommentIds = useRef<Set<number>>(new Set());
-  const countdownRef = useRef<NodeJS.Timeout | null>(null);
-  const showResultsRef = useRef(false);
-  const pendingStateRef = useRef<FestivalStatus | null>(null);
 
-  // multi-room state
-  const [roomVotes, setRoomVotes] = useState<RoomVotes>({});
-  const [roomUsers, setRoomUsers] = useState<RoomUsers>({});
-  const ALL_ROOMS = "__all__";
-  const [activeRoomCode, setActiveRoomCode] = useState<string>(roomCode);
+  const { status, hasVoted } = useFestival(roomCode, userToken);
+  const votes = status?.song?.votes ?? [];
+  const songId = status?.songId ?? null;
 
-  useEffect(() => { showResultsRef.current = showResults; }, [showResults]);
+  const votesRef = useRef<Vote[]>([]);
+  useEffect(() => { votesRef.current = votes; }, [votes]);
 
-  const hasVotedRef = useRef(false);
-  const hasSkippedRef = useRef(false);
-  useEffect(() => { hasVotedRef.current = hasVoted; onHasVotedChange?.(hasVoted); }, [hasVoted]);
-  useEffect(() => { hasSkippedRef.current = hasSkipped; }, [hasSkipped]);
+  const lastSongIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (songId !== null) lastSongIdRef.current = songId;
+  }, [songId]);
 
-  const festivalStateRef = useRef<FestivalStatus | null>(null);
-  useEffect(() => { festivalStateRef.current = festivalState; }, [festivalState]);
-
-  // Ref per fetchVotesForRoom — aggiornato ad ogni render, evita stale closure nel handler Pusher
-  const fetchVotesForRoomRef = useRef<(code: string) => Promise<void>>(async () => {});
-
-  const shouldBlockStateChange = () => {
-    if (showResultsRef.current) return true;
-    if (
-      festivalStateRef.current?.type === "votazione" &&
-      !hasVotedRef.current &&
-      !hasSkippedRef.current
-    ) return true;
-    return false;
-  };
-
-  // ── fetch base ──────────────────────────────────────────────────────────
-  const fetchStatus = async () => {
+  // Ref aggiornata per fetchare i voti di una stanza specifica
+  const fetchVotesForOtherRoom = useCallback(async (code: string) => {
+    const sid = lastSongIdRef.current ?? songId;
+    if (!sid) return;
     try {
-      const res = await fetch(`/api/festival-status?roomCode=${roomCode}`);
-      const data: FestivalStatus = await res.json();
-      if (hasVotedRef.current === false && !hasSkippedRef.current && data.type === "votazione") {
-        setFestivalState((prev) => {
-          if (!prev || prev.type !== "votazione") return prev ?? data;
-          return { ...prev, song: prev.song ? { ...prev.song, votes: data.song?.votes ?? [] } : prev.song };
-        });
-        return;
-      }
-      if (shouldBlockStateChange()) { pendingStateRef.current = data; setHasPendingState(true); }
-      else setFestivalState(data);
-    } catch (err) { console.error(err); }
-  };
-
-  const fetchVotes = async (songId?: number) => {
-    try {
-      const sid = songId ?? songIdForVotesRef.current;
-      if (!sid) return;
-      const res = await fetch(`/api/get-votes?songId=${sid}`);
-      const votes: Vote[] = await res.json();
-      setDisplayVotes(votes);
-      setFestivalState((prev) => {
-        if (!prev?.song || prev.song.id !== sid) return prev;
-        return { ...prev, song: { ...prev.song, votes } };
-      });
-    } catch (err) { console.error(err); }
-  };
-
-  const fetchVotesForRoom = async (code: string) => {
-    try {
-      // Usa get-votes diretto — festival-status potrebbe non includere i voti
-      const songId = songIdForVotesRef.current ?? festivalStateRef.current?.songId;
-      if (!songId) return;
-      const res = await fetch(`/api/get-votes?songId=${songId}`);
-      if (!res.ok) return;
-      const votes: Vote[] = await res.json();
-      setRoomVotes((prev) => ({ ...prev, [code]: votes }));
-      if (code === roomCode) {
-        setDisplayVotes(votes);
-        setFestivalState((prev) => {
-          if (!prev?.song) return prev;
-          return { ...prev, song: { ...prev.song, votes } };
-        });
-      }
-    } catch (err) { console.error(err); }
-  };
-  // Aggiorna il ref ad ogni render così il handler Pusher usa sempre la versione fresca
-  fetchVotesForRoomRef.current = fetchVotesForRoom;
-
-  const fetchUsersForRoom = async (code: string) => {
-    try {
-      const res = await fetch(`/api/get-room?code=${code}`, {
-        headers: userToken ? { Authorization: `Bearer ${userToken}` } : {},
-      });
+      const res = await fetch(`/api/festival-status?roomCode=${code}${userToken ? `&userToken=${userToken}` : ""}`);
       if (!res.ok) return;
       const data = await res.json();
-      setRoomUsers((prev) => ({ ...prev, [code]: data.room.users }));
-    } catch (err) { console.error(err); }
-  };
+      const roomVotesList: Vote[] = data.song?.votes ?? [];
+      setRoomVotes((prev) => ({ ...prev, [code]: roomVotesList }));
+    } catch {}
+  }, [userToken, songId]);
 
-  const fetchComments = async (songId: number) => {
-    try {
-      const res = await fetch(`/api/get-comments?songId=${songId}&roomCode=${roomCode}`);
-      const data: Comment[] = await res.json();
-      setComments(data);
-    } catch (err) { console.error(err); }
-  };
+  const fetchVotesForOtherRoomRef = useRef(fetchVotesForOtherRoom);
+  useEffect(() => { fetchVotesForOtherRoomRef.current = fetchVotesForOtherRoom; }, [fetchVotesForOtherRoom]);
 
-  const fetchReactions = async (songId: number) => {
-    try {
-      const res = await fetch(`/api/get-reactions?songId=${songId}&roomCode=${roomCode}`);
-      const data: { user_id: number; type: string; count: number }[] = await res.json();
-      const map: UserReactionsMap = {};
-      for (const row of data) {
-        if (!map[row.user_id]) map[row.user_id] = {};
-        const emoji = REACTIONS.find((r) => r.type === row.type)?.emoji ?? row.type;
-        map[row.user_id][emoji] = (map[row.user_id][emoji] ?? 0) + row.count;
-      }
-      setUserReactions(map);
-    } catch (err) { console.error(err); }
-  };
-
-  const fetchFinalLeaderboard = async () => {
-    try {
-      const res = await fetch(`/api/room-leaderboard?roomCode=${roomCode}`);
-      if (!res.ok) return;
-      setFinalLeaderboard(await res.json());
-    } catch (err) { console.error(err); }
-  };
-
-  const fetchMyVotes = async () => {
-    if (!userToken) return;
-    try {
-      const res = await fetch(`/api/get-my-votes?roomCode=${roomCode}`, {
-        headers: { Authorization: `Bearer ${userToken}` },
-      });
-      if (!res.ok) return;
-      setMyVotes(await res.json());
-    } catch (err) { console.error(err); }
-  };
-
-  const handleReaction = async (reactionType: string, emoji: string, e?: React.MouseEvent) => {
-    e?.stopPropagation();
-    if (!festivalState?.songId || !userToken) return;
-    if (reactionCooldownRef.current[reactionType]) return;
-    reactionCooldownRef.current[reactionType] = true;
-    setTimeout(() => { reactionCooldownRef.current[reactionType] = false; }, 300);
-    try {
-      await fetch("/api/add-reaction", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
-        body: JSON.stringify({ type: reactionType, songId: festivalState.songId, roomCode }),
-      });
-    } catch (err) { console.error(err); }
-  };
-
-  const closeResults = () => {
-    setShowResults(false);
-    showResultsRef.current = false;
-    setTimeLeft(null);
-    setHasPendingState(false);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    if (pendingStateRef.current) { setFestivalState(pendingStateRef.current); pendingStateRef.current = null; }
-  };
-
-  // ── Pusher init ──────────────────────────────────────────────────────────
-  // onFestivalEvent usa un event bus a livello di modulo: sicuro con StrictMode.
-  // Il cleanup rimuove il listener dal bus senza toccare il canale Pusher.
+  // Listener Pusher vote-update: aggiorna i voti della stanza che ha ricevuto il voto
   useEffect(() => {
-    fetchStatus();
+    if (userRooms.length <= 1) return;
+    const off = onFestivalEvent<{ songId: number; roomCode: string }>("vote-update", ({ roomCode: updatedCode }) => {
+      if (updatedCode === roomCode) return;
+      fetchVotesForOtherRoomRef.current(updatedCode);
+    });
+    return off;
+  }, [roomCode, userRooms.length]);
 
-    const handleStatusUpdate = (data: FestivalStatus) => {
-      if (shouldBlockStateChange()) {
-        pendingStateRef.current = data;
-        setHasPendingState(true);
-        return;
+  const lastSongRef = useRef<{ id: number; title: string; artist: string } | null>(null);
+  useEffect(() => {
+    if (status?.song) lastSongRef.current = status.song;
+  }, [status?.song]);
+
+  const [resultsVotes, setResultsVotes] = useState<Vote[]>([]);
+
+  const shouldShowVoting =
+    !hasVoted &&
+    !hasSkipped &&
+    !!status?.type &&
+    VOTING_OPEN_STATES.includes(status.type) &&
+    !showResults;
+
+  const userRoomsRef = useRef(userRooms);
+  useEffect(() => { userRoomsRef.current = userRooms; }, [userRooms]);
+  const userTokenRef = useRef(userToken);
+  useEffect(() => { userTokenRef.current = userToken; }, [userToken]);
+  const roomCodeRef = useRef(roomCode);
+  useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
+
+  const fetchVotesForRoom = useCallback(async (code: string) => {
+    try {
+      const token = userTokenRef.current;
+      const res = await fetch(`/api/festival-status?roomCode=${code}${token ? `&userToken=${token}` : ""}`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const v: Vote[] = data.song?.votes ?? [];
+      setRoomVotes((prev) => ({ ...prev, [code]: v }));
+      if (code === roomCodeRef.current && showResultsRef.current) {
+        setResultsVotes(v);
       }
-      if (showResultsRef.current) { pendingStateRef.current = data; setHasPendingState(true); }
-      else setFestivalState(data);
-    };
-
-    const handleVoteUpdate = ({ roomCode: updatedCode }: { roomCode: string }) => {
-      // Chiama via ref per avere sempre la versione aggiornata della funzione
-      fetchVotesForRoomRef.current(updatedCode);
-    };
-
-    const handleCommentUpdate = ({ songId }: { songId: number }) => fetchComments(songId);
-
-    const handleReactionUpdate = ({ emoji, user_id }: { emoji: string; user_id?: number }) => {
-      const id = floatIdRef.current++;
-      const x = Math.random() * 30 + 5;
-      setFloatingReactions((prev) => [...prev, { id, emoji, x }]);
-      setTimeout(() => setFloatingReactions((prev) => prev.filter((r) => r.id !== id)), 2400);
-      if (user_id !== undefined) {
-        setUserReactions((prev) => {
-          const userMap = { ...(prev[user_id] ?? {}) };
-          userMap[emoji] = (userMap[emoji] ?? 0) + 1;
-          return { ...prev, [user_id]: userMap };
-        });
-      }
-      setCombo((prev) => {
-        const count = prev?.emoji === emoji ? prev.count + 1 : 1;
-        if (comboTimerRef.current) clearTimeout(comboTimerRef.current);
-        comboTimerRef.current = setTimeout(() => setCombo(null), 2000);
-        return { emoji, count };
-      });
-    };
-
-    const off1 = onFestivalEvent<FestivalStatus>("status-update", handleStatusUpdate);
-    const off2 = onFestivalEvent<{ roomCode: string }>("vote-update", handleVoteUpdate);
-    const off3 = onFestivalEvent<{ songId: number }>("comment-update", handleCommentUpdate);
-    const off4 = onFestivalEvent<{ emoji: string; user_id?: number }>("reaction-update", handleReactionUpdate);
-
-    return () => { off1(); off2(); off3(); off4(); };
+    } catch {}
   }, []);
 
-  // carica utenti di tutte le stanze quando userRooms è disponibile
   useEffect(() => {
-    if (userRooms.length > 0) {
-      userRooms.forEach((r) => fetchUsersForRoom(r.code));
-      setActiveRoomCode(roomCode);
+    return onFestivalEvent<{ roomCode: string }>("vote-update", ({ roomCode: updatedCode }) => {
+      const isKnown = userRoomsRef.current.some((r) => r.code === updatedCode);
+      if (isKnown) fetchVotesForRoom(updatedCode);
+    });
+  }, []);
+
+  const fetchRoomData = useCallback(async () => {
+    for (const r of userRoomsRef.current) {
+      try {
+        const token = userTokenRef.current;
+        const [statusRes, roomRes] = await Promise.all([
+          fetch(`/api/festival-status?roomCode=${r.code}${token ? `&userToken=${token}` : ""}`),
+          fetch(`/api/get-room?code=${r.code}`, { headers: { Authorization: `Bearer ${token}` } }),
+        ]);
+        const statusData = await statusRes.json();
+        const roomData = await roomRes.json();
+        setRoomVotes((prev) => ({ ...prev, [r.code]: statusData.song?.votes ?? [] }));
+        if (roomData.room?.users) {
+          setRoomUsers((prev) => ({ ...prev, [r.code]: roomData.room.users }));
+        }
+      } catch {}
     }
-  }, [userRooms.length]);
+  }, []);
 
-  // ── Reset on song change ───────────────────────────────────────────────
-  useEffect(() => {
-    setHasVoted(false);
-    setHasSkipped(false);
-    setSkipConfirm(false);
-    setShowResults(false);
-    showResultsRef.current = false;
-    hasVotedRef.current = false;
-    hasSkippedRef.current = false;
-    setTimeLeft(null);
-    setHasPendingState(false);
-    setShowResultsReadOnly(false);
-    setVisibleComment(null);
-    setComments([]);
-    setUserReactions({});
-    setDisplayVotes([]);
-    setRoomVotes({});
-    shownCommentIds.current = new Set();
-    pendingStateRef.current = null;
-    onVotedUsersChange?.([]);
-    onShowResults?.(false);
-    if (commentTimerRef.current) clearTimeout(commentTimerRef.current);
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    if (festivalState?.songId) songIdForVotesRef.current = festivalState.songId;
-  }, [festivalState?.songId]);
-
-  useEffect(() => {
-    if (!showResultsRef.current && festivalState?.type !== "votazione") {
-      setShowResults(false);
-      setShowResultsReadOnly(false);
-      setTimeLeft(null);
-      if (countdownRef.current) clearInterval(countdownRef.current);
-    }
-  }, [festivalState?.type]);
-
-  useEffect(() => { if (timeLeft === 0) closeResults(); }, [timeLeft]);
-  useEffect(() => { if (festivalState?.type) onFestivalTypeChange?.(festivalState.type); }, [festivalState?.type]);
-  useEffect(() => { onSongIdChange?.(festivalState?.songId ?? null); }, [festivalState?.songId]);
-
-  useEffect(() => {
-    if (festivalState?.type === "classifica") {
-      fetchFinalLeaderboard();
-      fetchMyVotes();
-      setShowFinalLeaderboard(false);
-      setFinalCountdown(3);
-      if (finalCountdownRef.current) clearInterval(finalCountdownRef.current);
-      finalCountdownRef.current = setInterval(() => {
-        setFinalCountdown((prev) => {
-          if (prev === null) return null;
-          if (prev <= 1) { clearInterval(finalCountdownRef.current!); setShowFinalLeaderboard(true); return null; }
-          return prev - 1;
-        });
-      }, 1000);
-    } else {
-      if (finalCountdownRef.current) clearInterval(finalCountdownRef.current);
-      setFinalCountdown(null);
-      setShowFinalLeaderboard(false);
-    }
-    return () => { if (finalCountdownRef.current) clearInterval(finalCountdownRef.current); };
-  }, [festivalState?.type]);
-
-  useEffect(() => {
-    if (!festivalState?.song || !currentUser) return;
-    const votes = festivalState.song.votes ?? [];
-    if (votes.some((v) => v.user_id === currentUser.id)) setHasVoted(true);
-  }, [festivalState?.song, currentUser]);
-
-  useEffect(() => {
-    const v = displayVotes.length > 0 ? displayVotes : (festivalState?.song?.votes ?? []);
-    onVotedUsersChange?.(v.map((vv) => vv.user_id));
-    onVotesChange?.(v);
-  // FIX Bug1: dipende da displayVotes intero così scatta anche se cambia un valore a parità di lunghezza
-  }, [displayVotes, festivalState?.song?.votes]);
-
-  useEffect(() => { onShowResults?.(showResults); }, [showResults]);
-
-  const triggerResults = () => {
-    if (showResults) return;
-    setShowResults(true);
+  const triggerResults = useCallback((initialVotes: Vote[]) => {
+    if (showResultsRef.current) return;
     showResultsRef.current = true;
+    setResultsVotes(initialVotes);
+    setShowResults(true);
     onShowResults?.(true);
     setTimeLeft(RESULTS_DURATION);
-    if (userRooms.length > 0) userRooms.forEach((r) => fetchVotesForRoomRef.current(r.code));
-    else fetchVotesForRoomRef.current(roomCode);
+    if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = setInterval(() => {
       setTimeLeft((prev) => {
         if (prev === null || prev <= 1) { clearInterval(countdownRef.current!); return 0; }
         return prev - 1;
       });
     }, 1000);
-  };
+    fetchRoomData();
+  }, [onShowResults, fetchRoomData]);
+
+  const votesKey = votes.map(v => `${v.user_id}:${v.value}`).join(",");
+  useEffect(() => {
+    onVotedUsersChange?.(votes.map((v) => v.user_id));
+    onVotesChange?.(votes);
+    if (showResultsRef.current && votes.length > 0) {
+      setResultsVotes(votes);
+      setRoomVotes((prev) => ({ ...prev, [roomCode]: votes }));
+    }
+  }, [votesKey]);
+
+  const voting = useVoting({
+    roomCode,
+    userToken,
+    currentUserId: currentUser?.id,
+    currentSongId: lastSongIdRef.current ?? songId,
+    votes,
+    onVoteDone: async () => {
+      onHasVotedChange?.(true);
+      triggerResults(votesRef.current);
+    },
+  });
+
+  const handleSkip = useCallback(() => {
+    setHasSkipped(true);
+    onHasVotedChange?.(true);
+    triggerResults(votesRef.current);
+  }, [triggerResults, onHasVotedChange]);
 
   useEffect(() => {
-    if (festivalState?.type !== "esibizione" || !festivalState.songId) return;
-    fetchComments(festivalState.songId);
-    fetchReactions(festivalState.songId);
-    const showInterval = setInterval(() => {
-      setComments((curr) => {
-        const unseen = curr.filter((c) => !shownCommentIds.current.has(c.id));
-        if (!unseen.length) return curr;
-        const next = unseen[0];
-        shownCommentIds.current.add(next.id);
-        setVisibleComment(next);
-        const duration = next.likes >= Math.ceil(users.length * 0.35) ? 14000 : 8000;
-        if (commentTimerRef.current) clearTimeout(commentTimerRef.current);
-        commentTimerRef.current = setTimeout(() => setVisibleComment(null), duration);
-        return curr;
+    if (hasVoted) onHasVotedChange?.(true);
+  }, [hasVoted]);
+
+  const prevSongIdRef = useRef<number | null>(null);
+  useEffect(() => {
+    if (songId === null) return;
+    if (songId === prevSongIdRef.current) return;
+    prevSongIdRef.current = songId;
+    voting.reset();
+    setHasSkipped(false);
+    setSliderTouched(false);
+    setShowResults(false);
+    setTimeLeft(null);
+    setResultsVotes([]);
+    setRoomVotes({});
+    setRoomUsers({});
+    showResultsRef.current = false;
+    if (countdownRef.current) clearInterval(countdownRef.current);
+    onVotedUsersChange?.([]);
+    onShowResults?.(false);
+  }, [songId]);
+
+  const { chatComments } = useComments({
+    songId, roomCode, isEsibizione: status?.type === "esibizione", users,
+  });
+  const chatEndRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatComments.length]);
+  const { floating, combo, sendReaction } = useReactions({ songId, roomCode, userToken });
+
+  useEffect(() => { if (status?.type) onFestivalTypeChange?.(status.type); }, [status?.type]);
+  useEffect(() => { onSongIdChange?.(songId); }, [songId]);
+  useEffect(() => { onShowResults?.(showResults); }, [showResults]);
+  useEffect(() => {
+    if (timeLeft === 0) {
+      setShowResults(false);
+      showResultsRef.current = false;
+      setTimeLeft(null);
+    }
+  }, [timeLeft]);
+
+  // Classifica finale: fetch + countdown quando type === "classifica"
+  useEffect(() => {
+    if (status?.type !== "classifica") {
+      if (finalCountdownRef.current) clearInterval(finalCountdownRef.current);
+      setFinalCountdown(null);
+      setShowFinalLeaderboard(false);
+      return;
+    }
+    const fetchFinal = async () => {
+      try {
+        const res = await fetch(`/api/room-leaderboard?roomCode=${roomCode}`);
+        if (res.ok) setFinalLeaderboard(await res.json());
+      } catch {}
+    };
+    const fetchMyVotesFn = async () => {
+      if (!userToken) return;
+      try {
+        const res = await fetch(`/api/get-my-votes?roomCode=${roomCode}`, {
+          headers: { Authorization: `Bearer ${userToken}` },
+        });
+        if (res.ok) setMyVotes(await res.json());
+      } catch {}
+    };
+    const fetchAllRoomVotes = async () => {
+      try {
+        const res = await fetch(`/api/get-all-votes?roomCode=${roomCode}`);
+        if (res.ok) setAllRoomVotes(await res.json());
+      } catch {}
+    };
+    const fetchCumulative = async () => {
+      try {
+        const res = await fetch(`/api/cumulative-leaderboard?roomCode=${roomCode}`);
+        if (res.ok) setCumulativeLeaderboard(await res.json());
+      } catch {}
+    };
+    fetchFinal();
+    fetchMyVotesFn();
+    fetchAllRoomVotes();
+    fetchCumulative();
+    setShowFinalLeaderboard(false);
+    setFinalCountdown(3);
+    if (finalCountdownRef.current) clearInterval(finalCountdownRef.current);
+    finalCountdownRef.current = setInterval(() => {
+      setFinalCountdown((prev) => {
+        if (prev === null) return null;
+        if (prev <= 1) {
+          clearInterval(finalCountdownRef.current!);
+          setShowFinalLeaderboard(true);
+          return null;
+        }
+        return prev - 1;
       });
-    }, 10000);
-    return () => { clearInterval(showInterval); if (commentTimerRef.current) clearTimeout(commentTimerRef.current); };
-  }, [festivalState?.type, festivalState?.songId]);
+    }, 1000);
+    return () => { if (finalCountdownRef.current) clearInterval(finalCountdownRef.current); };
+  }, [status?.type]);
 
-  if (!festivalState || !currentUser) return null;
+  if (!status || !currentUser) return null;
 
-  const votes = displayVotes.length > 0 ? displayVotes : (festivalState.song?.votes ?? []);
-  const canVote = festivalState.type === "votazione" && !hasVoted && !hasSkipped && !showResults;
-
-  const tabRooms = userRooms.length > 1 ? userRooms : [];
-
-  // Vista aggregata "TUTTE": media dei voti tra tutte le stanze per username
-  const allRoomsAggregated = (() => {
-    if (tabRooms.length < 2) return null;
-    // Raccogli tutti i voti da tutte le stanze
-    const allVotesByUsername: Record<string, number[]> = {};
-    tabRooms.forEach((r) => {
-      const rVotes = r.code === roomCode ? votes : (roomVotes[r.code] ?? []);
-      const rUsers = r.code === roomCode ? users : (roomUsers[r.code] ?? []);
-      rVotes.forEach((v) => {
-        const u = rUsers.find((u) => u.id === v.user_id);
-        if (!u) return;
-        if (!allVotesByUsername[u.username]) allVotesByUsername[u.username] = [];
-        allVotesByUsername[u.username].push(v.value);
-      });
-    });
-    // Costruisci lista utenti unici (per username) con voto medio
-    const seen = new Set<string>();
-    const allUsers: User[] = [];
-    tabRooms.forEach((r) => {
-      const rUsers = r.code === roomCode ? users : (roomUsers[r.code] ?? []);
-      rUsers.forEach((u) => {
-        if (!seen.has(u.username)) { seen.add(u.username); allUsers.push(u); }
-      });
-    });
-    const aggVotes: Vote[] = allUsers
-      .filter((u) => allVotesByUsername[u.username]?.length > 0)
-      .map((u) => {
-        const vals = allVotesByUsername[u.username];
-        const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-        return { id: u.id, user_id: u.id, value: parseFloat(avg.toFixed(2)) };
-      });
-    return { aggVotes, allUsers };
-  })();
-
-  const isAllRooms = activeRoomCode === ALL_ROOMS;
-  const activeVotes = isAllRooms
-    ? (allRoomsAggregated?.aggVotes ?? [])
-    : activeRoomCode === roomCode ? votes : (roomVotes[activeRoomCode] ?? []);
-  const activeUsers = isAllRooms
-    ? (allRoomsAggregated?.allUsers ?? [])
-    : activeRoomCode === roomCode ? users : (roomUsers[activeRoomCode] ?? []);
-
-  const handleVote = async () => {
-    if (!canVote || !festivalState.songId || !userToken) return;
-    try {
-      const res = await fetch("/api/add-vote", {
-        method: "POST",
-        headers: { "Content-Type": "application/json", Authorization: `Bearer ${userToken}` },
-        body: JSON.stringify({ roomCode, songId: festivalState.songId, value: voteValue, userToken }),
-      });
-      if (!res.ok) throw new Error("Errore invio voto");
-      setHasVoted(true);
-      hasVotedRef.current = true;
-      setSkipConfirm(false);
-      triggerResults();
-      await fetchVotes(festivalState.songId);
-    } catch (err) { console.error(err); }
-  };
-
-  const handleSkipConfirmed = () => {
-    setHasSkipped(true);
-    hasSkippedRef.current = true;
-    setSkipConfirm(false);
-    hasVotedRef.current = true;
-    onHasVotedChange?.(true);
-    triggerResults();
-  };
-
-  const handleReact = async (commentId: number, type: "like" | "dislike") => {
-    try {
-      await fetch("/api/react-comment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ commentId, type }),
-      });
-      setVisibleComment((prev) =>
-        prev?.id === commentId
-          ? { ...prev, likes: type === "like" ? prev.likes + 1 : prev.likes, dislikes: type === "dislike" ? prev.dislikes + 1 : prev.dislikes }
-          : prev
-      );
-    } catch (err) { console.error(err); }
-  };
-
-  // ── CLASSIFICA canzone corrente ─────────────────────────────────────────
-  const renderClassifica = () => {
-    const sortedUsers = [...activeUsers].sort((a, b) => {
-      const vA = activeVotes.find((v) => v.user_id === a.id)?.value ?? -1;
-      const vB = activeVotes.find((v) => v.user_id === b.id)?.value ?? -1;
-      return vB - vA;
-    });
-    const votedList = activeVotes.filter((v) => v.value !== undefined);
-    const average = votedList.length > 0
-      ? votedList.reduce((sum, v) => sum + v.value, 0) / votedList.length
-      : null;
-    const circ = 2 * Math.PI * 10;
-
-    return (
-      <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "16px 14px 14px" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14, flexShrink: 0, minWidth: 0 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1, minWidth: 0, overflowX: "auto", scrollbarWidth: "none" }}>
-            <span className="ib-pill" style={{ flexShrink: 0 }}>
-              <span className="ib-dot" />
-              Risultati
-            </span>
-            {tabRooms.length > 1 && (
-              <>
-                {tabRooms.map((r) => (
-                  <button
-                    key={r.code}
-                    onClick={() => setActiveRoomCode(r.code)}
-                    className={`ib-room-tab ${r.code === activeRoomCode ? "ib-room-tab-active" : "ib-room-tab-inactive"}`}
-                  >
-                    {r.event ?? r.code}
-                  </button>
-                ))}
-                <button
-                  onClick={() => setActiveRoomCode(ALL_ROOMS)}
-                  className={`ib-room-tab ${isAllRooms ? "ib-room-tab-active" : "ib-room-tab-inactive"}`}
-                  style={isAllRooms ? { borderColor: "rgba(147,197,253,0.4)", color: "rgba(147,197,253,0.9)", background: "rgba(147,197,253,0.1)" } : {}}
-                >
-                  TUTTE
-                </button>
-              </>
-            )}
-          </div>
-          {timeLeft !== null && timeLeft > 0 && (
-            <div style={{ position: "relative", width: 30, height: 30, flexShrink: 0 }}>
-              <svg width="30" height="30" viewBox="0 0 24 24" style={{ transform: "rotate(-90deg)" }}>
-                <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(255,255,255,0.06)" strokeWidth="1.5" />
-                <circle cx="12" cy="12" r="10" fill="none" stroke="rgba(255,255,255,0.3)" strokeWidth="1.5"
-                  strokeDasharray={`${circ}`}
-                  strokeDashoffset={`${circ * (1 - timeLeft / RESULTS_DURATION)}`}
-                  strokeLinecap="round" style={{ transition: "stroke-dashoffset 1s linear" }}
-                />
-              </svg>
-              <span style={{ position: "absolute", inset: 0, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'DM Mono', monospace", fontSize: 8, color: "rgba(255,255,255,0.35)" }}>
-                {timeLeft}
-              </span>
-            </div>
-          )}
-        </div>
-
-        <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          {average !== null ? (
-            <>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 52, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px" }}>
-                {average.toFixed(1)}
-              </div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", marginTop: 4 }}>
-                {votedList.length} {votedList.length === 1 ? "voto" : "voti"}
-                {tabRooms.length > 1 && (
-                  <span style={{ color: "rgba(255,255,255,0.18)", marginLeft: 6 }}>
-                    · {isAllRooms ? "media tutte le stanze" : activeRoomCode === roomCode ? "la tua stanza" : (tabRooms.find(r => r.code === activeRoomCode)?.event ?? activeRoomCode)}
-                  </span>
-                )}
-              </div>
-            </>
-          ) : (
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.22)" }}>In attesa dei voti…</div>
-          )}
-        </div>
-
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, overflowY: "auto", flex: 1 }}>
-          {sortedUsers.map((u, i) => {
-            const vote = activeVotes.find((v) => v.user_id === u.id);
-            const isMe = u.id === currentUser.id;
-            const isFirst = vote && i === 0;
-            let rowClass = "ib-row ";
-            if (isFirst) rowClass += "ib-row-first";
-            else if (isMe) rowClass += "ib-row-me";
-            else rowClass += "ib-row-other";
-            return (
-              <div key={u.id} className={rowClass}>
-                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)", width: 16, textAlign: "center", flexShrink: 0 }}>
-                  {vote ? (isFirst ? <Trophy size={11} color="#D4AF37" strokeWidth={2} /> : i + 1) : "—"}
-                </span>
-                <span style={{ flex: 1, fontSize: 13, fontWeight: isMe ? 700 : 400, color: isFirst ? "#ededed" : isMe ? "#ededed" : "rgba(255,255,255,0.5)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {u.username}
-                  {isMe && <span style={{ color: isFirst ? "rgba(212,175,55,0.4)" : "rgba(255,255,255,0.22)", fontWeight: 400 }}> · tu</span>}
-                  {isMe && hasSkipped && <span style={{ color: "rgba(255,100,100,0.4)", fontWeight: 400 }}> · saltato</span>}
-                </span>
-                {(() => {
-                  const rMap = userReactions[u.id];
-                  if (!rMap) return null;
-                  const topEmoji = Object.entries(rMap).sort((a, b) => b[1] - a[1])[0];
-                  if (!topEmoji) return null;
-                  const total = Object.values(rMap).reduce((s, n) => s + n, 0);
-                  return (
-                    <span style={{ display: "inline-flex", alignItems: "center", gap: 3, background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 999, padding: "2px 7px", fontSize: 11, fontFamily: "'DM Mono', monospace", color: "rgba(255,255,255,0.45)", flexShrink: 0, marginRight: 4 }}>
-                      <span style={{ fontSize: 13, lineHeight: 1 }}>{topEmoji[0]}</span>
-                      <span>×{total}</span>
-                    </span>
-                  );
-                })()}
-                {vote
-                  ? <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 15, color: isFirst ? "#D4AF37" : "#ededed" }}>{vote.value.toFixed(1)}</span>
-                  : <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(255,255,255,0.15)" }}>—</span>
-                }
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
-  // ── CLASSIFICA FINALE ────────────────────────────────────────────────────
   const renderClassificaFinale = () => {
-    const withVotes = finalLeaderboard.filter((s) => s.average !== null);
-    const overall = withVotes.length > 0
-      ? withVotes.reduce((sum, s) => sum + s.average!, 0) / withVotes.length
-      : null;
-
     if (!showFinalLeaderboard) {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12, textAlign: "center", padding: "0 24px" }}>
           <Trophy size={22} color="#D4AF37" strokeWidth={1.5} style={{ opacity: 0.7 }} />
           <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", letterSpacing: "0.06em", textTransform: "uppercase", margin: 0 }}>Classifica finale</p>
           {finalCountdown !== null && (
-            <div key={finalCountdown} style={{ fontFamily: "'DM Mono', monospace", fontSize: 72, fontWeight: 400, color: "#D4AF37", lineHeight: 1, letterSpacing: "-2px", animation: "ib-count-pop 0.35s ease both" }}>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 72, fontWeight: 400, color: "#D4AF37", lineHeight: 1, letterSpacing: "-2px" }}>
               {finalCountdown}
             </div>
           )}
@@ -899,7 +366,22 @@ export default function InteractBox({
     }
 
     const myVotesMap = new Map<number, number>(myVotes.map((v) => [v.songId, v.value]));
-    const personalList = [...finalLeaderboard].sort((a, b) => {
+
+    // Quale lista usare in base alla modalità
+    const activeBaseList = lbMode === "cumulativa" && cumulativeLeaderboard.length > 0
+      ? cumulativeLeaderboard
+      : finalLeaderboard;
+
+    const withVotes = activeBaseList.filter((s) => s.average !== null);
+    const overall = withVotes.length > 0
+      ? withVotes.reduce((sum, s) => sum + s.average!, 0) / withVotes.length
+      : null;
+
+    // Frecce: confronto rank serata vs rank cumulativo
+    const serataRankMap = new Map(finalLeaderboard.map((s, i) => [s.id, i + 1]));
+    const cumulativaRankMap = new Map(cumulativeLeaderboard.map((s, i) => [s.id, i + 1]));
+
+    const personalList = [...activeBaseList].sort((a, b) => {
       const vA = myVotesMap.get(a.id) ?? null;
       const vB = myVotesMap.get(b.id) ?? null;
       if (vA !== null && vB !== null) return vB - vA;
@@ -908,181 +390,427 @@ export default function InteractBox({
       if (a.average !== null && b.average !== null) return b.average - a.average;
       return 0;
     });
-    const activeList = lbView === "stanza" ? finalLeaderboard : personalList;
-    const roomRankMap = new Map(finalLeaderboard.map((s, i) => [s.id, i + 1]));
+    const roomRankMap = new Map(activeBaseList.map((s, i) => [s.id, i + 1]));
+    const activeList = lbView === "stanza" ? activeBaseList : personalList;
+
+    // ── Calcolo affinità ──────────────────────────────────────────────────
+    const myUserId = currentUser?.id;
+    const myAllVotes = allRoomVotes.filter((v) => v.user_id === myUserId);
+
+    // Affinità totale vs stanza: media del delta tra mio voto e media degli altri
+    let roomCompat: number | null = null;
+    if (myAllVotes.length > 0) {
+      const pairs: { my: number; avg: number }[] = [];
+      myAllVotes.forEach((mv) => {
+        const others = allRoomVotes.filter((v) => v.song_id === mv.song_id && v.user_id !== myUserId);
+        if (others.length === 0) return;
+        const avg = others.reduce((s, v) => s + v.value, 0) / others.length;
+        pairs.push({ my: mv.value, avg });
+      });
+      if (pairs.length > 0) {
+        const avgDiff = pairs.reduce((s, p) => s + Math.abs(p.my - p.avg), 0) / pairs.length;
+        roomCompat = Math.max(0, Math.round((1 - avgDiff / 9) * 100));
+      }
+    }
+
+    // Affinità totale vs ogni altra persona
+    const otherUserIds = [...new Set(allRoomVotes.map((v) => v.user_id))].filter((id) => id !== myUserId);
+    const personCompats = otherUserIds.map((uid) => {
+      const theirVotes = allRoomVotes.filter((v) => v.user_id === uid);
+      const pairs: { my: number; their: number }[] = [];
+      myAllVotes.forEach((mv) => {
+        const match = theirVotes.find((tv) => tv.song_id === mv.song_id);
+        if (match) pairs.push({ my: mv.value, their: match.value });
+      });
+      if (pairs.length === 0) return null;
+      const avgDiff = pairs.reduce((s, p) => s + Math.abs(p.my - p.their), 0) / pairs.length;
+      const pct = Math.max(0, Math.round((1 - avgDiff / 9) * 100));
+      const user = users.find((u) => u.id === uid);
+      return user ? { user, pct, songs: pairs.length } : null;
+    }).filter(Boolean).sort((a, b) => b!.pct - a!.pct) as { user: User; pct: number; songs: number }[];
+
+    const compatColor = (p: number) => p >= 80 ? "#6ee7b7" : p >= 60 ? "#D4AF37" : p >= 40 ? "#fb923c" : "#f87171";
+    const hasCompat = roomCompat !== null || personCompats.length > 0;
 
     return (
       <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "16px 14px 14px" }}>
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14, flexShrink: 0 }}>
+        {/* Header con tab */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexShrink: 0 }}>
           <span className="ib-pill" style={{ borderColor: "rgba(212,175,55,0.25)", color: "rgba(212,175,55,0.8)" }}>
-            <Trophy size={9} color="#D4AF37" strokeWidth={2} />Classifica serata
+            {lbView === "stanza" && <><Trophy size={9} color="#D4AF37" strokeWidth={2} style={{ marginRight: 2 }} />Classifica</>}
+            {lbView === "mia" && <><Star size={9} color="#D4AF37" strokeWidth={2} style={{ marginRight: 2 }} />La mia</>}
+            {lbView === "affinita" && <><Heart size={9} color="#D4AF37" strokeWidth={2} style={{ marginRight: 2 }} />Affinità</>}
           </span>
           <div style={{ display: "flex", background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 8, padding: 2, gap: 2 }}>
-            {(["stanza", "mia"] as const).map((v) => (
-              <button key={v} onClick={() => setLbView(v)} style={{ padding: "4px 10px", borderRadius: 6, border: "none", fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 600, letterSpacing: "0.05em", textTransform: "uppercase" as const, cursor: "pointer", transition: "background 0.15s, color 0.15s", background: lbView === v ? "rgba(255,255,255,0.09)" : "transparent", color: lbView === v ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.28)" }}>
-                {v === "stanza" ? "Stanza" : "La mia"}
+            {(["stanza", "mia", ...(hasCompat ? ["affinita"] : [])] as const).map((v) => {
+              const isActive = lbView === v;
+              const Icon = v === "stanza" ? Trophy : v === "mia" ? Star : Heart;
+              return (
+                <button key={v} onClick={() => setLbView(v as any)} title={v === "stanza" ? "Classifica" : v === "mia" ? "La mia" : "Affinità"} style={{ width: 34, height: 28, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, border: "none", cursor: "pointer", transition: "background 0.15s, color 0.15s", background: isActive ? "rgba(255,255,255,0.09)" : "transparent", color: isActive ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)" }}>
+                  <Icon size={13} strokeWidth={isActive ? 2.5 : 1.5} />
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Switcher serata / cumulativa — solo per tab classifica e mia */}
+        {(lbView === "stanza" || lbView === "mia") && cumulativeLeaderboard.length > 0 && (
+          <div style={{ display: "flex", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 2, gap: 2, marginBottom: 12, flexShrink: 0 }}>
+            {(["serata", "cumulativa"] as const).map((m) => (
+              <button key={m} onClick={() => setLbMode(m)} style={{ flex: 1, padding: "5px 0", borderRadius: 6, border: "none", fontFamily: "'Inter', sans-serif", fontSize: 10, fontWeight: 600, letterSpacing: "0.04em", textTransform: "uppercase", cursor: "pointer", transition: "background 0.15s, color 0.15s", background: lbMode === m ? "rgba(255,255,255,0.08)" : "transparent", color: lbMode === m ? "rgba(255,255,255,0.8)" : "rgba(255,255,255,0.28)" }}>
+                {m === "serata" ? "Questa serata" : "Tutte le serate"}
               </button>
             ))}
           </div>
-        </div>
+        )}
 
-        {lbView === "stanza" ? (
-          overall !== null && (
-            <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-              <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 52, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px" }}>{overall.toFixed(2)}</div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", marginTop: 4 }}>media serata · {withVotes.length} {withVotes.length === 1 ? "canzone" : "canzoni"}</div>
-            </div>
-          )
-        ) : (
+        {/* Sommario */}
+        {lbView === "stanza" && overall !== null && (
           <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-            <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>
-              Le canzoni ordinate per il tuo voto personale.<br />
-              <span style={{ fontSize: 10, color: "rgba(255,255,255,0.15)" }}>Il numero grigio indica la posizione in classifica stanza.</span>
+            <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 52, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px" }}>{overall.toFixed(2)}</div>
+            <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", marginTop: 4 }}>
+              {lbMode === "cumulativa" ? "media cumulativa" : "media serata"} · {withVotes.length} {withVotes.length === 1 ? "canzone" : "canzoni"}
             </div>
           </div>
         )}
+        {lbView === "mia" && (() => {
+          const myVotedSongs = finalLeaderboard.filter((s) => myVotesMap.get(s.id) !== undefined);
+          const myOverall = myVotedSongs.length > 0
+            ? myVotedSongs.reduce((sum, s) => sum + myVotesMap.get(s.id)!, 0) / myVotedSongs.length
+            : null;
+          return (
+            <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              {myOverall !== null ? (
+                <>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 52, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px" }}>{myOverall.toFixed(2)}</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", marginTop: 4 }}>
+                    la tua media · {myVotedSongs.length} {myVotedSongs.length === 1 ? "canzone" : "canzoni"}
+                    <span style={{ marginLeft: 8, fontSize: 10, color: "rgba(255,255,255,0.15)" }}>· # grigio = pos. in classifica stanza</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>Nessun voto registrato.</div>
+              )}
+            </div>
+          );
+        })()}
+        {lbView === "affinita" && (() => {
+          const compatColor = (p: number) => p >= 80 ? "#6ee7b7" : p >= 60 ? "#D4AF37" : p >= 40 ? "#fb923c" : "#f87171";
+          const myUserId = currentUser?.id;
+          const myAllVotesTmp = allRoomVotes.filter((v) => v.user_id === myUserId);
+          let roomCompatHeader: number | null = null;
+          if (myAllVotesTmp.length > 0) {
+            const pairs: { my: number; avg: number }[] = [];
+            myAllVotesTmp.forEach((mv) => {
+              const others = allRoomVotes.filter((v) => v.song_id === mv.song_id && v.user_id !== myUserId);
+              if (others.length === 0) return;
+              const avg = others.reduce((s, v) => s + v.value, 0) / others.length;
+              pairs.push({ my: mv.value, avg });
+            });
+            if (pairs.length > 0) {
+              const avgDiff = pairs.reduce((s, p) => s + Math.abs(p.my - p.avg), 0) / pairs.length;
+              roomCompatHeader = Math.max(0, Math.round((1 - avgDiff / 9) * 100));
+            }
+          }
+          return (
+            <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+              {roomCompatHeader !== null ? (
+                <>
+                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 52, fontWeight: 400, color: compatColor(roomCompatHeader), lineHeight: 1, letterSpacing: "-1px" }}>{roomCompatHeader}%</div>
+                  <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", marginTop: 4 }}>affinità con la stanza · {myAllVotesTmp.length} {myAllVotesTmp.length === 1 ? "canzone" : "canzoni"}</div>
+                </>
+              ) : (
+                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", lineHeight: 1.5 }}>Quanto i voti si sono incrociati, canzone per canzone.</div>
+              )}
+            </div>
+          );
+        })()}
 
-        <div style={{ display: "flex", flexDirection: "column", gap: 5, overflowY: "auto", flex: 1 }}>
-          {activeList.length === 0 ? (
-            <div style={{ fontSize: 13, color: "rgba(255,255,255,0.22)", textAlign: "center", paddingTop: 24 }}>Caricamento…</div>
-          ) : activeList.map((song, i) => {
-            const hasVotes = song.average !== null;
-            const isFirst = lbView === "stanza" && hasVotes && i === 0;
-            const myVote = myVotesMap.get(song.id) ?? null;
-            const roomRank = lbView === "mia" ? roomRankMap.get(song.id) : null;
-            let rowClass = "ib-row " + (isFirst ? "ib-row-first" : "ib-row-other");
-            return (
-              <div key={song.id} className={rowClass} style={{ opacity: hasVotes ? 1 : 0.4 }}>
-                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)", width: 16, textAlign: "center", flexShrink: 0 }}>
-                  {isFirst ? <Trophy size={11} color="#D4AF37" strokeWidth={2} /> : i + 1}
-                </span>
-                <span style={{ flex: 1, minWidth: 0 }}>
-                  <span style={{ display: "block", fontSize: 13, fontWeight: isFirst ? 700 : 400, color: hasVotes ? "#ededed" : "rgba(255,255,255,0.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</span>
-                  <span style={{ display: "block", fontSize: 9, color: isFirst ? "rgba(212,175,55,0.6)" : "rgba(255,255,255,0.25)", letterSpacing: "0.06em", textTransform: "uppercase" as const, marginTop: 1 }}>{song.artist}</span>
-                </span>
-                {lbView === "mia" && roomRank !== null && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.18)", flexShrink: 0, marginRight: 6 }}>#{roomRank}</span>}
-                {lbView === "stanza" && hasVotes && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", flexShrink: 0, marginRight: 6 }}>{song.voteCount}v</span>}
-                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 17 : 15, color: isFirst ? "#D4AF37" : hasVotes ? "#ededed" : "rgba(255,255,255,0.15)", flexShrink: 0 }}>
-                  {lbView === "mia" && myVote !== null ? myVote.toFixed(1) : hasVotes ? song.average!.toFixed(1) : "—"}
-                </span>
+        {/* ── Lista canzoni ── */}
+        {(lbView === "stanza" || lbView === "mia") && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 5, overflowY: "auto", flex: 1 }}>
+            {activeList.length === 0 ? (
+              <div style={{ fontSize: 13, color: "rgba(255,255,255,0.22)", textAlign: "center", paddingTop: 24 }}>Caricamento…</div>
+            ) : activeList.map((song, i) => {
+              const hasVotesEntry = song.average !== null;
+              const isFirst = lbView === "stanza" && hasVotesEntry && i === 0;
+              const myVote = myVotesMap.get(song.id) ?? null;
+              const roomRank = lbView === "mia" ? roomRankMap.get(song.id) : null;
+              const rowClass = "ib-row " + (isFirst ? "ib-row-first" : "ib-row-other");
+
+              // Freccia: solo in modalità cumulativa, confronta pos. cumulativa vs pos. serata
+              let arrow: "up" | "down" | "same" | null = null;
+              if (lbMode === "cumulativa" && cumulativeLeaderboard.length > 0 && finalLeaderboard.length > 0) {
+                const cumRank = cumulativaRankMap.get(song.id) ?? null;
+                const serRank = serataRankMap.get(song.id) ?? null;
+                if (cumRank !== null && serRank !== null) {
+                  arrow = serRank < cumRank ? "up" : serRank > cumRank ? "down" : "same";
+                }
+              }
+
+              return (
+                <div key={song.id} className={rowClass} style={{ opacity: hasVotesEntry ? 1 : 0.4 }}>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)", width: 16, textAlign: "center", flexShrink: 0 }}>
+                    {isFirst ? <Trophy size={11} color="#D4AF37" strokeWidth={2} /> : i + 1}
+                  </span>
+                  <span style={{ flex: 1, minWidth: 0 }}>
+                    <span style={{ display: "block", fontSize: 13, fontWeight: isFirst ? 700 : 400, color: hasVotesEntry ? "#ededed" : "rgba(255,255,255,0.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</span>
+                    <span style={{ display: "block", fontSize: 9, color: isFirst ? "rgba(212,175,55,0.6)" : "rgba(255,255,255,0.25)", letterSpacing: "0.06em", textTransform: "uppercase", marginTop: 1 }}>{song.artist}</span>
+                  </span>
+                  {/* Freccia movimento */}
+                  {arrow && arrow !== "same" && (
+                    <span style={{ fontSize: 10, flexShrink: 0, marginRight: 4, color: arrow === "up" ? "#6ee7b7" : "#f87171", lineHeight: 1 }}>
+                      {arrow === "up" ? "▲" : "▼"}
+                    </span>
+                  )}
+                  {lbView === "mia" && roomRank !== null && (
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.18)", flexShrink: 0, marginRight: 6 }}>#{roomRank}</span>
+                  )}
+                  {lbView === "stanza" && hasVotesEntry && (
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", flexShrink: 0, marginRight: 6 }}>{song.voteCount}v</span>
+                  )}
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 17 : 15, color: isFirst ? "#D4AF37" : hasVotesEntry ? "#ededed" : "rgba(255,255,255,0.15)", flexShrink: 0 }}>
+                    {lbView === "mia" && myVote !== null ? myVote.toFixed(1) : hasVotesEntry ? song.average!.toFixed(1) : "—"}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {/* ── Affinità: per canzone + totale ── */}
+        {lbView === "affinita" && (
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", flex: 1 }}>
+            {!hasCompat ? (
+              <div style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textAlign: "center", marginTop: 20 }}>
+                Dati non disponibili
               </div>
-            );
-          })}
-        </div>
+            ) : (
+              <>
+                {/* ── Per ogni canzone ── */}
+                {finalLeaderboard.filter((s) => s.average !== null).map((song) => {
+                  const songVotes = allRoomVotes.filter((v) => v.song_id === song.id);
+
+                  // affinità stanza per questa canzone (io vs media degli altri)
+                  const myVoteForSong = songVotes.find((v) => v.user_id === myUserId);
+                  let songRoomCompat: number | null = null;
+                  if (myVoteForSong) {
+                    const others = songVotes.filter((v) => v.user_id !== myUserId);
+                    if (others.length > 0) {
+                      const avg = others.reduce((s, v) => s + v.value, 0) / others.length;
+                      songRoomCompat = Math.max(0, Math.round((1 - Math.abs(myVoteForSong.value - avg) / 9) * 100));
+                    }
+                  }
+
+                  // affinità tra ogni coppia di votanti per questa canzone
+                  const votingUsers = users.filter((u) => songVotes.some((v) => v.user_id === u.id));
+                  const pairCompats: { userA: string; userB: string; pct: number }[] = [];
+                  for (let i = 0; i < votingUsers.length; i++) {
+                    for (let j = i + 1; j < votingUsers.length; j++) {
+                      const vA = songVotes.find((v) => v.user_id === votingUsers[i].id)?.value;
+                      const vB = songVotes.find((v) => v.user_id === votingUsers[j].id)?.value;
+                      if (vA !== undefined && vB !== undefined) {
+                        const pct = Math.max(0, Math.round((1 - Math.abs(vA - vB) / 9) * 100));
+                        pairCompats.push({ userA: votingUsers[i].username, userB: votingUsers[j].username, pct });
+                      }
+                    }
+                  }
+                  pairCompats.sort((a, b) => b.pct - a.pct);
+
+                  if (songRoomCompat === null && pairCompats.length === 0) return null;
+
+                  return (
+                    <div key={song.id} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "11px 13px", display: "flex", flexDirection: "column", gap: 7 }}>
+                      {/* Song header */}
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
+                        <span style={{ fontSize: 12, fontWeight: 600, color: "rgba(255,255,255,0.65)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", flex: 1 }}>{song.title}</span>
+                        <span style={{ fontSize: 9, color: "rgba(255,255,255,0.2)", letterSpacing: "0.06em", textTransform: "uppercase", flexShrink: 0 }}>{song.artist}</span>
+                      </div>
+
+                      {/* Affinità stanza per questa canzone */}
+                      {songRoomCompat !== null && (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", flexShrink: 0, width: 54 }}>Stanza</span>
+                          <div style={{ flex: 1, height: 2, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${songRoomCompat}%`, borderRadius: 999, background: compatColor(songRoomCompat), transition: "width 0.6s ease" }} />
+                          </div>
+                          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: compatColor(songRoomCompat), flexShrink: 0, width: 32, textAlign: "right" }}>{songRoomCompat}%</span>
+                        </div>
+                      )}
+
+                      {/* Affinità per coppia su questa canzone */}
+                      {pairCompats.map(({ userA, userB, pct }) => (
+                        <div key={`${userA}-${userB}`} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", flexShrink: 0, width: 54, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                            {userA} · {userB}
+                          </span>
+                          <div style={{ flex: 1, height: 2, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: `${pct}%`, borderRadius: 999, background: compatColor(pct), transition: "width 0.6s ease" }} />
+                          </div>
+                          <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: compatColor(pct), flexShrink: 0, width: 32, textAlign: "right" }}>{pct}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+
+                {/* ── Totale serata ── */}
+                <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14, display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
+                  <p style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.07em", textTransform: "uppercase", margin: "0 0 2px", fontWeight: 500 }}>Totale serata</p>
+
+                  {/* Totale vs stanza */}
+                  {roomCompat !== null && (
+                    <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", flexShrink: 0, width: 54, fontWeight: 500 }}>Stanza</span>
+                      <div style={{ flex: 1, height: 3, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${roomCompat}%`, borderRadius: 999, background: compatColor(roomCompat), transition: "width 0.6s ease" }} />
+                      </div>
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: compatColor(roomCompat), flexShrink: 0, width: 36, textAlign: "right", fontWeight: 600 }}>{roomCompat}%</span>
+                    </div>
+                  )}
+
+                  {/* Totale per ogni coppia */}
+                  {personCompats.map(({ user: u, pct, songs }) => (
+                    <div key={u.id} style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                      <span style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", flexShrink: 0, width: 54, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                        {u.username}
+                      </span>
+                      <div style={{ flex: 1, height: 3, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
+                        <div style={{ height: "100%", width: `${pct}%`, borderRadius: 999, background: compatColor(pct), transition: "width 0.6s ease" }} />
+                      </div>
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.18)", flexShrink: 0, marginRight: 4 }}>{songs}c</span>
+                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 13, color: compatColor(pct), flexShrink: 0, width: 36, textAlign: "right", fontWeight: 600 }}>{pct}%</span>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+        )}
       </div>
     );
   };
 
-  // ── CONTENT ────────────────────────────────────────────────────────────
-  const renderBoxContent = () => {
-    // Chi ha già votato/saltato vede la classifica normale
-    if (showResults) return renderClassifica();
-    // FIX Bug2: chi deve ancora votare può comunque vedere la classifica in sola lettura
-    if (showResultsReadOnly && festivalState.type === "votazione") return renderClassifica();
+  const renderCard = () => {
+    if (showResults) {
+      return (
+        <Classifica
+          votes={resultsVotes}
+          users={users}
+          currentUserId={currentUser.id}
+          timeLeft={timeLeft}
+          roomCode={roomCode}
+          userRooms={userRooms}
+          activeRoomIndex={activeRoomIndex}
+          onRoomChange={setActiveRoomIndex}
+          roomVotes={roomVotes}
+          roomUsers={roomUsers}
+        />
+      );
+    }
 
-    switch (festivalState.type) {
+    if (shouldShowVoting) {
+      const song = status?.song ?? lastSongRef.current;
+      return (
+        <VotingBox
+          value={voting.voteValue}
+          onChange={voting.setVoteValue}
+          songTitle={song?.title}
+          songArtist={song?.artist}
+          onSkip={handleSkip}
+          touched={sliderTouched}
+          onTouched={() => setSliderTouched(true)}
+        />
+      );
+    }
+
+    if ((hasVoted || hasSkipped) && !showResults && status.type === "votazione") {
+      return (
+        <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%" }}>
+          <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.55)", marginBottom: 4 }}>
+            {hasSkipped ? "Voto saltato" : "Voto inviato"}
+          </p>
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)" }}>In attesa degli altri…</p>
+        </div>
+      );
+    }
+
+    switch (status.type) {
       case "esibizione":
         return (
           <>
-            {festivalState.song?.image_url && (
+            {status.song?.image_url && (
               <>
-                <img src={festivalState.song.image_url} alt={festivalState.song.artist}
-                  style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top" }} />
-                <div style={{ position: "absolute", inset: 0, background: visibleComment ? "rgba(0,0,0,0.35)" : "rgba(0,0,0,0.62)", transition: "background 0.6s ease" }} />
+                <img src={status.song.image_url} alt={status.song.artist} style={{ position: "absolute", inset: 0, width: "100%", height: "100%", objectFit: "cover", objectPosition: "center top" }} />
+                <div style={{ position: "absolute", inset: 0, background: chatComments.length > 0 ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.62)", transition: "background 0.6s ease" }} />
               </>
             )}
-            {visibleComment && (
-              <div className="ib-toast">
-                <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 10 }}>
-                  <div style={{ minWidth: 0 }}>
-                    <p style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginBottom: 3, fontWeight: 500, letterSpacing: "0.05em" }}>{visibleComment.user.username}</p>
-                    <p style={{ fontSize: 13, color: "rgba(255,255,255,0.8)", lineHeight: 1.4, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{visibleComment.text}</p>
+
+            {chatComments.length > 0 && (
+              <div style={{
+                position: "absolute",
+                bottom: 68,
+                left: 14,
+                right: 14,
+                maxHeight: "52%",
+                overflowY: "auto",
+                display: "flex",
+                flexDirection: "column",
+                gap: 5,
+                zIndex: 15,
+                scrollbarWidth: "none",
+                maskImage: "linear-gradient(to bottom, transparent 0%, black 18%)",
+                WebkitMaskImage: "linear-gradient(to bottom, transparent 0%, black 18%)",
+              }}>
+                {chatComments.map((c, i) => (
+                  <div
+                    key={c.id}
+                    style={{
+                      display: "inline-flex",
+                      flexDirection: "column",
+                      alignSelf: "flex-start",
+                      maxWidth: "80%",
+                      background: "rgba(15,15,20,0.68)",
+                      backdropFilter: "blur(10px)",
+                      border: "1px solid rgba(255,255,255,0.07)",
+                      borderRadius: "12px 12px 12px 3px",
+                      padding: "6px 10px",
+                      animation: i === chatComments.length - 1 ? "ib-bubble-in 0.3s ease both" : "none",
+                      flexShrink: 0,
+                    }}
+                  >
+                    <span style={{ fontSize: 9, color: "rgba(255,255,255,0.35)", fontWeight: 600, letterSpacing: "0.04em", marginBottom: 2 }}>
+                      {c.user.username}
+                    </span>
+                    <span style={{ fontSize: 12, color: "rgba(255,255,255,0.82)", lineHeight: 1.4 }}>
+                      {c.text}
+                    </span>
                   </div>
-                  <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
-                    <button className="ib-react-btn" onClick={() => handleReact(visibleComment.id, "like")}>👍 {visibleComment.likes}</button>
-                    <button className="ib-react-btn" onClick={() => handleReact(visibleComment.id, "dislike")}>👎 {visibleComment.dislikes}</button>
-                  </div>
-                </div>
+                ))}
+                <div ref={chatEndRef} />
               </div>
             )}
+
             {combo && combo.count >= 2 && (
               <div className="ib-combo" key={combo.count}>
                 <span style={{ fontSize: 16 }}>{combo.emoji}</span>
                 <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, fontWeight: 500, color: "#ededed" }}>x{combo.count}</span>
               </div>
             )}
-            {floatingReactions.map((r) => (
-              <div key={r.id} className="ib-float" style={{ right: `${r.x}%`, "--r": `${(Math.random() - 0.5) * 20}deg` } as React.CSSProperties}>{r.emoji}</div>
+            {floating.map((r) => (
+              <div key={r.id} className="ib-float" style={{ right: `${r.x}%`, "--r": `${(Math.random() - 0.5) * 20}deg` } as React.CSSProperties}>
+                {r.emoji}
+              </div>
             ))}
             <div className="ib-song-overlay">
-              <p style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4, fontWeight: 500 }}>{festivalState.song?.artist}</p>
-              <h2 style={{ fontSize: 24, fontWeight: 800, color: "#ededed", lineHeight: 1.2, letterSpacing: "-0.3px", margin: 0 }}>{festivalState.song?.title}</h2>
+              <p style={{ fontSize: 10, color: "rgba(255,255,255,0.4)", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: 4, fontWeight: 500 }}>{status.song?.artist}</p>
+              <h2 style={{ fontSize: 24, fontWeight: 800, color: "#ededed", lineHeight: 1.2, letterSpacing: "-0.3px", margin: 0 }}>{status.song?.title}</h2>
             </div>
           </>
         );
-
-      case "votazione":
-        return (
-          <>
-            {skipConfirm && (
-              <div className="ib-skip-overlay">
-                <div style={{ fontSize: 28, marginBottom: 4 }}>🤔</div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: "#ededed", textAlign: "center" }}>Saltare il voto?</div>
-                <div style={{ fontSize: 12, color: "rgba(255,255,255,0.35)", textAlign: "center", lineHeight: 1.5, maxWidth: 220 }}>
-                  Non potrai votare questa canzone. La tua scelta non sarà visibile agli altri.
-                </div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 8, width: "100%", marginTop: 8 }}>
-                  <button className="ib-btn ib-btn-danger" onClick={handleSkipConfirmed}>Sì, salta il voto</button>
-                  <button className="ib-btn ib-btn-live" onClick={() => setSkipConfirm(false)}>Annulla</button>
-                </div>
-              </div>
-            )}
-            <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", width: "100%", height: "100%", padding: "24px 22px" }}>
-              {!hasVoted && !hasSkipped ? (
-                <>
-                  {festivalState.song && (
-                    <div style={{ textAlign: "center", marginBottom: 20 }}>
-                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", letterSpacing: "0.1em", textTransform: "uppercase", fontWeight: 500, marginBottom: 4 }}>{festivalState.song.artist}</div>
-                      <div style={{ fontSize: 17, fontWeight: 700, color: "#ededed", letterSpacing: "-0.3px", lineHeight: 1.2 }}>{festivalState.song.title}</div>
-                    </div>
-                  )}
-                  <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 56, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px", marginBottom: 4 }}>{voteValue.toFixed(1)}</div>
-                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", marginBottom: 28, letterSpacing: "0.05em" }}>su 10</div>
-                  <div style={{ width: "100%" }}>
-                    <input type="range" min={1} max={10} step={0.1} value={voteValue}
-                      onChange={(e) => setVoteValue(parseFloat(e.target.value))}
-                      className="ib-slider"
-                      style={{ background: `linear-gradient(to right, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0.6) ${(voteValue - 1) / 9 * 100}%, rgba(255,255,255,0.1) ${(voteValue - 1) / 9 * 100}%, rgba(255,255,255,0.1) 100%)` }}
-                    />
-                    <div style={{ display: "flex", justifyContent: "space-between", marginTop: 10 }}>
-                      {[1,2,3,4,5,6,7,8,9,10].map((n) => (
-                        <span key={n} style={{ fontFamily: "'DM Mono', monospace", fontSize: 9, color: Math.round(voteValue) === n ? "rgba(255,255,255,0.55)" : "rgba(255,255,255,0.12)", transition: "color 0.15s" }}>{n}</span>
-                      ))}
-                    </div>
-                  </div>
-                  {userRooms.length > 1 && (
-                    <p style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", marginTop: 16, textAlign: "center" }}>
-                      Il tuo voto varrà per tutte le {userRooms.length} stanze
-                    </p>
-                  )}
-                  <button onClick={() => setSkipConfirm(true)}
-                    style={{ marginTop: 18, background: "none", border: "none", cursor: "pointer", fontSize: 11, color: "rgba(200,80,80,0.5)", fontFamily: "'Inter', sans-serif", letterSpacing: "0.04em", padding: 0, transition: "color 0.2s" }}
-                    onMouseEnter={(e) => (e.currentTarget.style.color = "rgba(200,80,80,0.75)")}
-                    onMouseLeave={(e) => (e.currentTarget.style.color = "rgba(200,80,80,0.5)")}>
-                    Salta il voto
-                  </button>
-                </>
-              ) : (
-                <div style={{ textAlign: "center" }}>
-                  <p style={{ fontSize: 14, fontWeight: 600, color: "rgba(255,255,255,0.55)", marginBottom: 4 }}>{hasSkipped ? "Voto saltato" : "Voto inviato"}</p>
-                  <p style={{ fontSize: 12, color: "rgba(255,255,255,0.22)" }}>In attesa degli altri…</p>
-                </div>
-              )}
-            </div>
-          </>
-        );
-
       case "classifica": return renderClassificaFinale();
+      case "votazione": return null;
       case "presentazione": return <StatusScreen icon={<Mic2 size={20} color="#D4AF37" strokeWidth={1.5} />} title="Presentazione" sub="Carlo Conti sta presentando il prossimo artista." />;
       case "spot": return <StatusScreen icon={<Tv size={20} color="#D4AF37" strokeWidth={1.5} />} title="Pubblicità" sub="Torniamo tra poco in diretta." />;
       case "pausa": return <StatusScreen icon={<PauseCircle size={20} color="#D4AF37" strokeWidth={1.5} />} title="Pausa tecnica" sub="Il festival riprende tra poco." />;
@@ -1092,56 +820,59 @@ export default function InteractBox({
     }
   };
 
-  // ── BUTTON ────────────────────────────────────────────────────────────
   const renderButton = () => {
-    // Caso: ha votato/saltato, sta vedendo i risultati
     if (showResults) {
       return (
-        <button onClick={closeResults} className={`ib-btn ${hasPendingState ? "ib-btn-gold" : "ib-btn-live"}`}>
-          {hasPendingState ? <span style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6 }}><RadioTower size={13} />Torna al live</span> : "Chiudi classifica"}
+        <button
+          onClick={() => { setShowResults(false); showResultsRef.current = false; setTimeLeft(null); if (countdownRef.current) clearInterval(countdownRef.current); }}
+          className="ib-btn ib-btn-live"
+        >
+          Torna al live
         </button>
       );
     }
 
-    // FIX Bug2: A sta vedendo la classifica in sola lettura, deve ancora votare
-    if (showResultsReadOnly && canVote) {
+    if (shouldShowVoting) {
       return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <button onClick={handleVote} className="ib-btn ib-btn-gold">Conferma voto</button>
-          <button onClick={() => setShowResultsReadOnly(false)} className="ib-btn ib-btn-live">
-            ← Torna a votare
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {voting.error && (
+            <p style={{ fontSize: 11, color: "rgba(255,100,100,0.8)", textAlign: "center", margin: 0 }}>
+              {voting.error} — <span style={{ cursor: "pointer", textDecoration: "underline" }} onClick={voting.submitVote}>riprova</span>
+            </p>
+          )}
+          <button onClick={voting.submitVote} disabled={voting.isSubmitting || !sliderTouched} className={`ib-btn ${sliderTouched ? "ib-btn-gold" : "ib-btn-muted"}`}>
+            {voting.isSubmitting ? "Invio in corso…" : "Conferma voto"}
           </button>
         </div>
       );
     }
 
-    // Caso normale: A deve ancora votare, mostra bottone vota + link classifica
-    if (canVote) {
-      return (
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <button onClick={handleVote} className="ib-btn ib-btn-gold">Conferma voto</button>
-        </div>
-      );
+    if (status.type === "classifica") {
+      return <button disabled className="ib-btn ib-btn-muted">Classifica finale</button>;
     }
 
-    if (festivalState?.type === "classifica") return <button disabled className="ib-btn ib-btn-muted">Classifica finale</button>;
-    if (festivalState?.type === "esibizione") {
+    if (status.type === "esibizione") {
       return (
         <div className="ib-reaction-bar">
           {REACTIONS.map((r) => (
-            <button key={r.type} className="ib-reaction-btn" onClick={(e) => handleReaction(r.type, r.emoji, e)}>{r.emoji}</button>
+            <button key={r.type} className="ib-reaction-btn" onClick={() => sendReaction(r.type)}>{r.emoji}</button>
           ))}
         </div>
       );
     }
-    return <button disabled className="ib-btn ib-btn-muted">{hasVoted ? "Voto inviato" : hasSkipped ? "Voto saltato" : "Conferma"}</button>;
+
+    return (
+      <button disabled className="ib-btn ib-btn-muted">
+        {hasVoted ? "Voto inviato" : hasSkipped ? "Voto saltato" : "Conferma"}
+      </button>
+    );
   };
 
   return (
     <>
       <style dangerouslySetInnerHTML={{ __html: styles }} />
       <div className="ib-root ib-fadein" style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%", padding: "0 0px" }}>
-        <div className={`ib-card${festivalState?.type === "classifica" ? " ib-card-gold" : ""}`} style={{ flex: 1, minHeight: 0 }}>{renderBoxContent()}</div>
+        <div className="ib-card" style={{ flex: 1, minHeight: 0 }}>{renderCard()}</div>
         <div style={{ flexShrink: 0 }}>{renderButton()}</div>
       </div>
     </>

@@ -30,61 +30,13 @@ const adminStyles = `
   @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
 
   .adm-root { font-family: 'Inter', sans-serif; background: #09090D; min-height: 100vh; padding: 32px 24px; color: #ededed; }
-
   .adm-title { font-size: 22px; font-weight: 800; margin-bottom: 28px; color: #ededed; letter-spacing: -0.3px; }
-
-  .adm-card {
-    background: #0F0F14;
-    border: 1px solid rgba(255,255,255,0.07);
-    border-radius: 18px;
-    padding: 20px;
-    margin-bottom: 20px;
-    max-width: 480px;
-  }
-
-  .adm-section-title {
-    font-size: 13px;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.35);
-    margin-bottom: 14px;
-  }
-
-  .adm-input {
-    width: 100%;
-    background: rgba(255,255,255,0.04);
-    border: 1px solid rgba(255,255,255,0.08);
-    border-radius: 10px;
-    padding: 10px 12px;
-    color: #ededed;
-    font-family: 'Inter', sans-serif;
-    font-size: 13px;
-    outline: none;
-    margin-bottom: 8px;
-    box-sizing: border-box;
-  }
+  .adm-card { background: #0F0F14; border: 1px solid rgba(255,255,255,0.07); border-radius: 18px; padding: 20px; margin-bottom: 20px; max-width: 480px; }
+  .adm-section-title { font-size: 13px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: rgba(255,255,255,0.35); margin-bottom: 14px; }
+  .adm-input { width: 100%; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 10px; padding: 10px 12px; color: #ededed; font-family: 'Inter', sans-serif; font-size: 13px; outline: none; margin-bottom: 8px; box-sizing: border-box; }
   .adm-input::placeholder { color: rgba(255,255,255,0.2); }
   .adm-input:focus { border-color: rgba(255,255,255,0.18); }
-
-  .adm-btn {
-    width: 100%;
-    padding: 12px;
-    border-radius: 12px;
-    border: none;
-    font-family: 'Inter', sans-serif;
-    font-weight: 700;
-    font-size: 12px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    cursor: pointer;
-    margin-bottom: 8px;
-    transition: opacity 0.2s, background 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 8px;
-  }
+  .adm-btn { width: 100%; padding: 12px; border-radius: 12px; border: none; font-family: 'Inter', sans-serif; font-weight: 700; font-size: 12px; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; margin-bottom: 8px; transition: opacity 0.2s, background 0.2s; display: flex; align-items: center; justify-content: space-between; gap: 8px; }
   .adm-btn:last-child { margin-bottom: 0; }
   .adm-btn-gold   { background: #D4AF37; color: #0F0F14; }
   .adm-btn-gold:hover { opacity: 0.88; }
@@ -100,99 +52,34 @@ const adminStyles = `
   .adm-btn-red:hover { background: rgba(220,60,60,0.22); }
   .adm-btn-yellow { background: rgba(234,179,8,0.15); color: rgba(253,224,71,0.9); border: 1px solid rgba(234,179,8,0.2); }
   .adm-btn-yellow:hover { background: rgba(234,179,8,0.22); }
-
   .adm-divider { border: none; border-top: 1px solid rgba(255,255,255,0.06); margin: 16px 0; }
-
-  .adm-pending-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    background: rgba(255,255,255,0.03);
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 12px;
-    padding: 12px 14px;
-    margin-bottom: 8px;
-  }
-
-  /* Leaderboard */
-  .adm-lb-row {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1px solid transparent;
-    margin-bottom: 6px;
-  }
-  .adm-lb-row-first {
-    background: rgba(212,175,55,0.08);
-    border-color: rgba(212,175,55,0.2);
-  }
+  .adm-pending-row { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.06); border-radius: 12px; padding: 12px 14px; margin-bottom: 8px; }
+  .adm-lb-row { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 12px; border: 1px solid transparent; margin-bottom: 6px; }
+  .adm-lb-row-first { background: rgba(212,175,55,0.08); border-color: rgba(212,175,55,0.2); }
   .adm-lb-row-other { background: rgba(255,255,255,0.02); border-color: rgba(255,255,255,0.04); }
   .adm-lb-row-novotes { background: rgba(255,255,255,0.015); opacity: 0.5; }
-
-  /* Shortcut badge */
-  .adm-kbd {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(0,0,0,0.25);
-    border: 1px solid rgba(255,255,255,0.15);
-    border-radius: 5px;
-    font-family: 'DM Mono', monospace;
-    font-size: 10px;
-    font-weight: 500;
-    padding: 2px 6px;
-    letter-spacing: 0;
-    text-transform: none;
-    flex-shrink: 0;
-    line-height: 1.4;
-  }
-
-  /* Toast notifica shortcut */
-  @keyframes adm-toast-in {
-    from { opacity: 0; transform: translateY(8px) translateX(-50%); }
-    to   { opacity: 1; transform: translateY(0) translateX(-50%); }
-  }
-  @keyframes adm-toast-out {
-    from { opacity: 1; }
-    to   { opacity: 0; }
-  }
-  .adm-toast {
-    position: fixed;
-    bottom: 28px;
-    left: 50%;
-    transform: translateX(-50%);
-    background: rgba(15,15,20,0.92);
-    backdrop-filter: blur(12px);
-    border: 1px solid rgba(255,255,255,0.1);
-    border-radius: 12px;
-    padding: 10px 18px;
-    font-size: 13px;
-    color: #ededed;
-    z-index: 999;
-    white-space: nowrap;
-    animation: adm-toast-in 0.2s ease both;
-  }
+  .adm-kbd { display: inline-flex; align-items: center; justify-content: center; background: rgba(0,0,0,0.25); border: 1px solid rgba(255,255,255,0.15); border-radius: 5px; font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 500; padding: 2px 6px; letter-spacing: 0; text-transform: none; flex-shrink: 0; line-height: 1.4; }
+  .adm-night-btn { flex: 1; padding: 14px 8px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.07); background: rgba(255,255,255,0.03); color: rgba(255,255,255,0.35); font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; cursor: pointer; transition: all 0.2s; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+  .adm-night-btn:hover { background: rgba(255,255,255,0.07); color: rgba(255,255,255,0.6); }
+  .adm-night-btn-active { background: rgba(212,175,55,0.12) !important; border-color: rgba(212,175,55,0.35) !important; color: #D4AF37 !important; }
+  @keyframes adm-toast-in { from { opacity: 0; transform: translateY(8px) translateX(-50%); } to { opacity: 1; transform: translateY(0) translateX(-50%); } }
+  @keyframes adm-toast-out { from { opacity: 1; } to { opacity: 0; } }
+  .adm-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: rgba(15,15,20,0.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px 18px; font-size: 13px; color: #ededed; z-index: 999; white-space: nowrap; animation: adm-toast-in 0.2s ease both; }
   .adm-toast-out { animation: adm-toast-out 0.3s ease forwards; }
-
-  /* Next song highlight */
-  .adm-next-song {
-    background: rgba(34,197,94,0.07);
-    border: 1px solid rgba(34,197,94,0.2);
-    border-radius: 12px;
-    padding: 12px 14px;
-    margin-bottom: 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
+  .adm-next-song { background: rgba(34,197,94,0.07); border: 1px solid rgba(34,197,94,0.2); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
 `;
 
-// ── Shortcut badge component ─────────────────────────────────────────────────
 function Kbd({ children }: { children: string }) {
   return <span className="adm-kbd">{children}</span>;
 }
+
+const NIGHTS = [
+  { n: 1, label: "1ª Serata" },
+  { n: 2, label: "2ª Serata" },
+  { n: 3, label: "3ª Serata" },
+  { n: 4, label: "4ª Serata" },
+  { n: 5, label: "5ª Serata" },
+];
 
 export default function FestivalControlPage() {
   const [loading, setLoading] = useState(false);
@@ -200,6 +87,7 @@ export default function FestivalControlPage() {
   const [songs, setSongs] = useState<Song[]>([]);
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
+  const [artistCanonical, setArtistCanonical] = useState("");
   const [performanceTime, setPerformanceTime] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [imageUrlNobg, setImageUrlNobg] = useState("");
@@ -209,10 +97,10 @@ export default function FestivalControlPage() {
   const [lbLoading, setLbLoading] = useState(false);
   const [roomCode, setRoomCode] = useState<string>("");
   const [toast, setToast] = useState<{ text: string; out: boolean } | null>(null);
+  const [activeNight, setActiveNight] = useState<number | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  // ── refs per stale closure nei keydown ───────────────────────────────────
   const songsRef = useRef<Song[]>([]);
   const songIdRef = useRef<number | "">("");
   useEffect(() => { songsRef.current = songs; }, [songs]);
@@ -251,7 +139,6 @@ export default function FestivalControlPage() {
     return () => clearInterval(interval);
   }, []);
 
-  // ── Toast helper ─────────────────────────────────────────────────────────
   const showToast = useCallback((text: string) => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ text, out: false });
@@ -261,8 +148,7 @@ export default function FestivalControlPage() {
     }, 2200);
   }, []);
 
-  // ── updateStatus ─────────────────────────────────────────────────────────
-  const updateStatus = useCallback(async (type: StatusType, overrideSongId?: number | "") => {
+  const updateStatus = useCallback(async (type: StatusType, overrideSongId?: number | "", night?: number) => {
     setLoading(true);
     const sid = overrideSongId !== undefined ? overrideSongId : songIdRef.current;
     try {
@@ -272,6 +158,7 @@ export default function FestivalControlPage() {
         body: JSON.stringify({
           type,
           songId: type === "esibizione" || type === "votazione" ? sid : null,
+          ...(night !== undefined ? { night } : {}),
         }),
       });
     } catch (error) {
@@ -281,32 +168,37 @@ export default function FestivalControlPage() {
     }
   }, []);
 
-  // ── Prossima canzone per orario ───────────────────────────────────────────
+  // Imposta la serata su tutte le room dell'evento
+  const setNight = useCallback(async (n: number) => {
+    try {
+      await fetch("/api/set-night", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ night: n }),
+      });
+      setActiveNight(n);
+      showToast(`🌙 Serata ${n} attivata su tutte le stanze`);
+    } catch {
+      showToast("❌ Errore impostazione serata");
+    }
+  }, [showToast]);
+
   const getNextSong = useCallback((): Song | null => {
     const list = songsRef.current;
     if (!list.length) return null;
-
     const withTime = list
       .filter((s) => s.performance_time)
       .sort((a, b) => new Date(a.performance_time!).getTime() - new Date(b.performance_time!).getTime());
-
     const currentId = songIdRef.current;
-
     if (withTime.length > 0) {
-      // Se c'è una canzone corrente, prendi la successiva per orario
       if (currentId) {
         const currentIndex = withTime.findIndex((s) => s.id === currentId);
-        if (currentIndex >= 0 && currentIndex + 1 < withTime.length) {
-          return withTime[currentIndex + 1];
-        }
+        if (currentIndex >= 0 && currentIndex + 1 < withTime.length) return withTime[currentIndex + 1];
       }
-      // Altrimenti la prima con orario futuro, o la prima in assoluto
       const now = new Date();
       const future = withTime.find((s) => new Date(s.performance_time!) >= now);
       return future ?? withTime[0];
     }
-
-    // Nessun orario: usa ordine lista, prende la successiva all'attuale
     if (currentId) {
       const idx = list.findIndex((s) => s.id === currentId);
       if (idx >= 0 && idx + 1 < list.length) return list[idx + 1];
@@ -314,23 +206,11 @@ export default function FestivalControlPage() {
     return list[0];
   }, []);
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────────
-  // N → prossima esibizione
-  // V → votazione canzone corrente
-  // 1 → presentazione
-  // 2 → spot
-  // 3 → pausa
-  // 4 → attesa
-  // 5 → classifica finale
-  // 6 → fine serata
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      // Non triggera se l'utente sta scrivendo in un input/select/textarea
       const tag = (e.target as HTMLElement).tagName.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
-
       const key = e.key.toLowerCase();
-
       if (key === "n") {
         const next = getNextSong();
         if (!next) { showToast("⚠️ Nessuna canzone disponibile"); return; }
@@ -354,12 +234,10 @@ export default function FestivalControlPage() {
       if (key === "5") { updateStatus("classifica"); showToast("🏆 Classifica finale"); return; }
       if (key === "6") { updateStatus("fine"); showToast("🏁 Fine serata"); return; }
     };
-
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [updateStatus, getNextSong, showToast]);
 
-  // ── Next song preview ─────────────────────────────────────────────────────
   const nextSong = getNextSong();
 
   const handleAddSong = async () => {
@@ -371,12 +249,13 @@ export default function FestivalControlPage() {
         body: JSON.stringify({
           title,
           artist,
+          artistCanonical: artistCanonical || null,
           performanceTime,
           imageUrl: imageUrl || null,
           imageUrlNobg: imageUrlNobg || null,
         }),
       });
-      setTitle(""); setArtist(""); setPerformanceTime(""); setImageUrl(""); setImageUrlNobg("");
+      setTitle(""); setArtist(""); setArtistCanonical(""); setPerformanceTime(""); setImageUrl(""); setImageUrlNobg("");
       await fetchSongs();
     } catch (error) {
       console.error("Errore aggiunta canzone", error);
@@ -389,7 +268,7 @@ export default function FestivalControlPage() {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      const songsToImport: { title: string; artist: string; performance_time?: string; image_url?: string; image_url_nobg?: string; }[] =
+      const songsToImport: { title: string; artist: string; artist_canonical?: string; performance_time?: string; image_url?: string; image_url_nobg?: string; }[] =
         Array.isArray(parsed) ? parsed : parsed.songs;
       if (!Array.isArray(songsToImport)) { setImportStatus("❌ Formato JSON non valido."); return; }
       setImportStatus(`⏳ Importazione di ${songsToImport.length} canzoni...`);
@@ -399,7 +278,14 @@ export default function FestivalControlPage() {
         const res = await fetch("/api/add-song", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ title: song.title, artist: song.artist, performanceTime: song.performance_time ?? null, imageUrl: song.image_url ?? null, imageUrlNobg: song.image_url_nobg ?? null }),
+          body: JSON.stringify({
+            title: song.title,
+            artist: song.artist,
+            artistCanonical: song.artist_canonical ?? null,
+            performanceTime: song.performance_time ?? null,
+            imageUrl: song.image_url ?? null,
+            imageUrlNobg: song.image_url_nobg ?? null,
+          }),
         });
         if (res.ok) success++;
       }
@@ -428,6 +314,36 @@ export default function FestivalControlPage() {
       <div className="adm-root">
         <h1 className="adm-title">🎛 Regia Festival</h1>
 
+        {/* ── SERATA ATTIVA ── */}
+        <div className="adm-card" style={{ borderColor: "rgba(212,175,55,0.2)" }}>
+          <div className="adm-section-title" style={{ color: "#D4AF37" }}>🌙 Serata attiva</div>
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 12 }}>
+            Imposta la serata corrente. Tutti i voti registrati da questo momento in poi
+            saranno taggati con questo numero su <strong style={{ color: "rgba(255,255,255,0.5)" }}>tutte le stanze</strong>.
+          </p>
+
+          {/* Pulsanti serata */}
+          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+            {NIGHTS.map(({ n, label }) => (
+              <button
+                key={n}
+                onClick={() => setNight(n)}
+                className={`adm-night-btn ${activeNight === n ? "adm-night-btn-active" : ""}`}
+              >
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 18, lineHeight: 1 }}>{n}</span>
+                <span style={{ fontSize: 9, letterSpacing: "0.06em" }}>{label.split(" ")[1]}</span>
+              </button>
+            ))}
+          </div>
+
+          {activeNight !== null && (
+            <div style={{ marginTop: 12, fontSize: 12, color: "rgba(212,175,55,0.7)", display: "flex", alignItems: "center", gap: 6 }}>
+              <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#D4AF37", display: "inline-block" }} />
+              Serata attiva: <strong style={{ color: "#D4AF37" }}>{activeNight}ª serata</strong>
+            </div>
+          )}
+        </div>
+
         {/* ── Shortcut reference card ── */}
         <div className="adm-card" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
           <div className="adm-section-title">⌨️ Scorciatoie tastiera</div>
@@ -449,7 +365,6 @@ export default function FestivalControlPage() {
             ))}
           </div>
 
-          {/* Prossima canzone preview */}
           {nextSong && (
             <div style={{ marginTop: 14 }}>
               <div className="adm-next-song">
@@ -497,7 +412,18 @@ export default function FestivalControlPage() {
         <div className="adm-card">
           <div className="adm-section-title">➕ Aggiungi Canzone</div>
           <input className="adm-input" type="text" placeholder="Titolo" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <input className="adm-input" type="text" placeholder="Artista" value={artist} onChange={(e) => setArtist(e.target.value)} />
+          <input className="adm-input" type="text" placeholder="Artista (es. Marco Mengoni feat. Ultimo)" value={artist} onChange={(e) => setArtist(e.target.value)} />
+          <input
+            className="adm-input"
+            type="text"
+            placeholder="Artista canonico per cumulative (es. Marco Mengoni)"
+            value={artistCanonical}
+            onChange={(e) => setArtistCanonical(e.target.value)}
+          />
+          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", marginTop: -4, marginBottom: 10, lineHeight: 1.5 }}>
+            L'artista canonico serve a collegare questa canzone alle versioni in serate diverse (es. duetti).
+            Lascia vuoto se non serve.
+          </p>
           <input className="adm-input" type="datetime-local" value={performanceTime} onChange={(e) => setPerformanceTime(e.target.value)} />
           <input className="adm-input" type="url" placeholder="URL immagine artista (opzionale)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
           <input className="adm-input" type="url" placeholder="URL immagine senza sfondo (opzionale)" value={imageUrlNobg} onChange={(e) => setImageUrlNobg(e.target.value)} />
@@ -506,7 +432,7 @@ export default function FestivalControlPage() {
           <hr className="adm-divider" />
           <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Importa da file JSON:</p>
           <p style={{ fontSize: 11, color: "rgba(255,255,255,0.18)", marginBottom: 10, fontFamily: "monospace" }}>
-            {"[{ title, artist, performance_time?, image_url?, image_url_nobg? }]"}
+            {"[{ title, artist, artist_canonical?, performance_time?, image_url?, image_url_nobg? }]"}
           </p>
           <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportJSON} style={{ display: "none" }} />
           <button onClick={() => fileInputRef.current?.click()} className="adm-btn adm-btn-gray">📂 Carica file JSON</button>
@@ -625,6 +551,7 @@ export default function FestivalControlPage() {
                     </div>
                     <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", marginTop: 4 }}>
                       media generale serata · {withVotes.length} {withVotes.length === 1 ? "canzone votata" : "canzoni votate"}
+                      {activeNight && <span style={{ marginLeft: 8, color: "rgba(212,175,55,0.5)" }}>· {activeNight}ª serata</span>}
                     </div>
                   </div>
                 );
@@ -637,7 +564,6 @@ export default function FestivalControlPage() {
                 if (isFirst) rowClass += "adm-lb-row-first";
                 else if (!hasVotes) rowClass += "adm-lb-row-novotes";
                 else rowClass += "adm-lb-row-other";
-
                 return (
                   <div key={song.id} className={rowClass}>
                     <div style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 14 : 11, color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)", width: 22, textAlign: "center", flexShrink: 0 }}>
@@ -673,7 +599,6 @@ export default function FestivalControlPage() {
         </div>
       </div>
 
-      {/* ── Toast ── */}
       {toast && (
         <div className={`adm-toast${toast.out ? " adm-toast-out" : ""}`}>
           {toast.text}

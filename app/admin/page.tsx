@@ -9,7 +9,6 @@ type Song = {
   artist: string;
   night?: number | null;
   image_url?: string;
-  image_url_nobg?: string;
   performance_time?: string | null;
 };
 
@@ -68,6 +67,24 @@ const adminStyles = `
   .adm-toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: rgba(15,15,20,0.92); backdrop-filter: blur(12px); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 10px 18px; font-size: 13px; color: #ededed; z-index: 999; white-space: nowrap; animation: adm-toast-in 0.2s ease both; }
   .adm-toast-out { animation: adm-toast-out 0.3s ease forwards; }
   .adm-next-song { background: rgba(34,197,94,0.07); border: 1px solid rgba(34,197,94,0.2); border-radius: 12px; padding: 12px 14px; margin-bottom: 12px; display: flex; align-items: center; gap: 10px; }
+
+  /* Song picker */
+  .adm-picker-dropdown { background: #13131A; border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; overflow: hidden; margin-bottom: 10px; max-height: 320px; overflow-y: auto; scrollbar-width: thin; scrollbar-color: rgba(255,255,255,0.08) transparent; }
+  .adm-picker-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px 12px; background: transparent; border: none; border-bottom: 1px solid rgba(255,255,255,0.04); cursor: pointer; text-align: left; transition: background 0.12s; }
+  .adm-picker-row:last-child { border-bottom: none; }
+  .adm-picker-row:hover { background: rgba(255,255,255,0.05); }
+  .adm-picker-row-active { background: rgba(212,175,55,0.09) !important; }
+  .adm-selected-song { display: flex; align-items: center; gap: 10px; background: rgba(212,175,55,0.07); border: 1px solid rgba(212,175,55,0.2); border-radius: 12px; padding: 10px 12px; margin-bottom: 10px; }
+
+  /* Big action buttons */
+  .adm-action-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px; }
+  .adm-action-big { border-radius: 14px; border: none; font-family: 'Inter', sans-serif; font-weight: 700; cursor: pointer; transition: opacity 0.15s, transform 0.1s; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; padding: 20px 10px; font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  .adm-action-big:active { transform: scale(0.96); }
+  .adm-action-big-next { background: rgba(34,197,94,0.15); color: rgba(134,239,172,0.9); border: 1px solid rgba(34,197,94,0.25); }
+  .adm-action-big-next:hover { background: rgba(34,197,94,0.22); }
+  .adm-action-big-vote { background: rgba(147,51,234,0.15); color: rgba(196,181,253,0.9); border: 1px solid rgba(147,51,234,0.25); }
+  .adm-action-big-vote:hover { background: rgba(147,51,234,0.22); }
+  .adm-action-big-esibi { background: rgba(34,197,94,0.08); color: rgba(134,239,172,0.7); border: 1px solid rgba(34,197,94,0.15); }
 `;
 
 function Kbd({ children }: { children: string }) {
@@ -86,6 +103,10 @@ export default function FestivalControlPage() {
   const [loading, setLoading] = useState(false);
   const [songId, setSongId] = useState<number | "">("");
   const [songs, setSongs] = useState<Song[]>([]);
+  const [songSearch, setSongSearch] = useState("");
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const pickerRef = useRef<HTMLDivElement>(null);
+
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [artistCanonical, setArtistCanonical] = useState("");
@@ -107,6 +128,27 @@ export default function FestivalControlPage() {
   const songIdRef = useRef<number | "">("");
   useEffect(() => { songsRef.current = songs; }, [songs]);
   useEffect(() => { songIdRef.current = songId; }, [songId]);
+
+  // Close picker on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setPickerOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  // Filtered songs for picker
+  const filteredSongs = songs.filter((s) => {
+    const q = songSearch.toLowerCase();
+    const nightMatch = activeNight === null || s.night === activeNight || s.night == null;
+    const textMatch = !q || s.artist.toLowerCase().includes(q) || s.title.toLowerCase().includes(q);
+    return nightMatch && textMatch;
+  });
+
+  const selectedSong = songs.find((s) => s.id === songId);
 
   const fetchSongs = async () => {
     const res = await fetch("/api/songs");
@@ -150,7 +192,7 @@ export default function FestivalControlPage() {
     }, 2200);
   }, []);
 
-  const updateStatus = useCallback(async (type: StatusType, overrideSongId?: number | "", night?: number) => {
+  const updateStatus = useCallback(async (type: StatusType, overrideSongId?: number | "") => {
     setLoading(true);
     const sid = overrideSongId !== undefined ? overrideSongId : songIdRef.current;
     try {
@@ -160,7 +202,6 @@ export default function FestivalControlPage() {
         body: JSON.stringify({
           type,
           songId: type === "esibizione" || type === "votazione" ? sid : null,
-          ...(night !== undefined ? { night } : {}),
         }),
       });
     } catch (error) {
@@ -170,7 +211,6 @@ export default function FestivalControlPage() {
     }
   }, []);
 
-  // Imposta la serata su tutte le room dell'evento
   const setNight = useCallback(async (n: number) => {
     try {
       await fetch("/api/set-night", {
@@ -179,7 +219,7 @@ export default function FestivalControlPage() {
         body: JSON.stringify({ night: n }),
       });
       setActiveNight(n);
-      showToast(`🌙 Serata ${n} attivata su tutte le stanze`);
+      showToast(`🌙 Serata ${n} attivata`);
     } catch {
       showToast("❌ Errore impostazione serata");
     }
@@ -194,41 +234,44 @@ export default function FestivalControlPage() {
     const currentId = songIdRef.current;
     if (withTime.length > 0) {
       if (currentId) {
-        const currentIndex = withTime.findIndex((s) => s.id === currentId);
-        if (currentIndex >= 0 && currentIndex + 1 < withTime.length) return withTime[currentIndex + 1];
+        const idx = withTime.findIndex((s) => s.id === currentId);
+        if (idx >= 0 && idx + 1 < withTime.length) return withTime[idx + 1];
       }
       const now = new Date();
-      const future = withTime.find((s) => new Date(s.performance_time!) >= now);
-      return future ?? withTime[0];
+      return withTime.find((s) => new Date(s.performance_time!) >= now) ?? withTime[0];
     }
     if (currentId) {
       const idx = list.findIndex((s) => s.id === currentId);
       if (idx >= 0 && idx + 1 < list.length) return list[idx + 1];
     }
     return list[0];
-  }, []);
+  }, [activeNight]);
+
+  const doNext = useCallback(() => {
+    const next = getNextSong();
+    if (!next) { showToast("⚠️ Nessuna canzone disponibile"); return; }
+    setSongId(next.id);
+    setSongSearch("");
+    setPickerOpen(false);
+    updateStatus("esibizione", next.id);
+    showToast(`▶ ${next.artist} – ${next.title}`);
+  }, [getNextSong, showToast, updateStatus]);
+
+  const doVote = useCallback(() => {
+    const sid = songIdRef.current;
+    if (!sid) { showToast("⚠️ Nessuna canzone selezionata"); return; }
+    updateStatus("votazione", sid);
+    const song = songsRef.current.find((s) => s.id === sid);
+    showToast(`🗳 Votazione: ${song ? `${song.artist} – ${song.title}` : sid}`);
+  }, [showToast, updateStatus]);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement).tagName.toLowerCase();
       if (tag === "input" || tag === "textarea" || tag === "select") return;
       const key = e.key.toLowerCase();
-      if (key === "n") {
-        const next = getNextSong();
-        if (!next) { showToast("⚠️ Nessuna canzone disponibile"); return; }
-        setSongId(next.id);
-        updateStatus("esibizione", next.id);
-        showToast(`▶ Esibizione: ${next.artist} – ${next.title}`);
-        return;
-      }
-      if (key === "v") {
-        const sid = songIdRef.current;
-        if (!sid) { showToast("⚠️ Nessuna canzone selezionata"); return; }
-        updateStatus("votazione", sid);
-        const song = songsRef.current.find((s) => s.id === sid);
-        showToast(`🗳 Votazione: ${song ? `${song.artist} – ${song.title}` : sid}`);
-        return;
-      }
+      if (key === "n") { doNext(); return; }
+      if (key === "v") { doVote(); return; }
       if (key === "1") { updateStatus("presentazione"); showToast("🎤 Presentazione"); return; }
       if (key === "2") { updateStatus("spot"); showToast("📺 Spot pubblicitario"); return; }
       if (key === "3") { updateStatus("pausa"); showToast("⏸ Pausa"); return; }
@@ -238,7 +281,7 @@ export default function FestivalControlPage() {
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [updateStatus, getNextSong, showToast]);
+  }, [updateStatus, doNext, doVote, showToast]);
 
   const nextSong = getNextSong();
 
@@ -249,8 +292,7 @@ export default function FestivalControlPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          title,
-          artist,
+          title, artist,
           artistCanonical: artistCanonical || null,
           night: songNight !== "" ? Number(songNight) : null,
           performanceTime,
@@ -271,8 +313,7 @@ export default function FestivalControlPage() {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      const songsToImport: { title: string; artist: string; artist_canonical?: string; night?: number; performance_time?: string; image_url?: string; image_url_nobg?: string; }[] =
-        Array.isArray(parsed) ? parsed : parsed.songs;
+      const songsToImport: any[] = Array.isArray(parsed) ? parsed : parsed.songs;
       if (!Array.isArray(songsToImport)) { setImportStatus("❌ Formato JSON non valido."); return; }
       setImportStatus(`⏳ Importazione di ${songsToImport.length} canzoni...`);
       let success = 0;
@@ -282,8 +323,7 @@ export default function FestivalControlPage() {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
-            title: song.title,
-            artist: song.artist,
+            title: song.title, artist: song.artist,
             artistCanonical: song.artist_canonical ?? null,
             night: song.night ?? null,
             performanceTime: song.performance_time ?? null,
@@ -321,25 +361,14 @@ export default function FestivalControlPage() {
         {/* ── SERATA ATTIVA ── */}
         <div className="adm-card" style={{ borderColor: "rgba(212,175,55,0.2)" }}>
           <div className="adm-section-title" style={{ color: "#D4AF37" }}>🌙 Serata attiva</div>
-          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 12 }}>
-            Imposta la serata corrente. Tutti i voti registrati da questo momento in poi
-            saranno taggati con questo numero su <strong style={{ color: "rgba(255,255,255,0.5)" }}>tutte le stanze</strong>.
-          </p>
-
-          {/* Pulsanti serata */}
-          <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+          <div style={{ display: "flex", gap: 8 }}>
             {NIGHTS.map(({ n, label }) => (
-              <button
-                key={n}
-                onClick={() => setNight(n)}
-                className={`adm-night-btn ${activeNight === n ? "adm-night-btn-active" : ""}`}
-              >
+              <button key={n} onClick={() => setNight(n)} className={`adm-night-btn ${activeNight === n ? "adm-night-btn-active" : ""}`}>
                 <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 18, lineHeight: 1 }}>{n}</span>
                 <span style={{ fontSize: 9, letterSpacing: "0.06em" }}>{label.split(" ")[1]}</span>
               </button>
             ))}
           </div>
-
           {activeNight !== null && (
             <div style={{ marginTop: 12, fontSize: 12, color: "rgba(212,175,55,0.7)", display: "flex", alignItems: "center", gap: 6 }}>
               <span style={{ width: 6, height: 6, borderRadius: "50%", background: "#D4AF37", display: "inline-block" }} />
@@ -348,8 +377,166 @@ export default function FestivalControlPage() {
           )}
         </div>
 
-        {/* ── Shortcut reference card ── */}
-        <div className="adm-card" style={{ borderColor: "rgba(255,255,255,0.1)" }}>
+        {/* ── CONTROLLI STATO + SONG PICKER ── */}
+        <div className="adm-card">
+          <div className="adm-section-title">🎛 Controlli stato</div>
+
+          {/* Stato buttons */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 8 }}>
+            {[
+              { type: "attesa" as StatusType, label: "⏳ In attesa", cls: "adm-btn-gray", kbd: "4" },
+              { type: "presentazione" as StatusType, label: "🎤 Presentazione", cls: "adm-btn-blue", kbd: "1" },
+              { type: "spot" as StatusType, label: "📺 Spot", cls: "adm-btn-yellow", kbd: "2" },
+              { type: "pausa" as StatusType, label: "⏸ Pausa", cls: "adm-btn-gray", kbd: "3" },
+              { type: "classifica" as StatusType, label: "🏆 Classifica", cls: "adm-btn-gold", kbd: "5" },
+              { type: "fine" as StatusType, label: "🏁 Fine serata", cls: "adm-btn-red", kbd: "6" },
+            ].map(({ type, label, cls, kbd }) => (
+              <button
+                key={type}
+                onClick={() => { updateStatus(type); showToast(label); }}
+                className={`adm-btn ${cls}`}
+                style={{ margin: 0, justifyContent: "space-between" }}
+              >
+                <span style={{ fontSize: 11 }}>{label}</span>
+                <Kbd>{kbd}</Kbd>
+              </button>
+            ))}
+          </div>
+
+          <hr className="adm-divider" />
+
+          {/* ── Song Picker ── */}
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 10 }}>Seleziona canzone</p>
+
+          <div ref={pickerRef} style={{ position: "relative" }}>
+            {/* Search input */}
+            <div style={{ position: "relative", marginBottom: pickerOpen ? 0 : 8 }}>
+              <span style={{ position: "absolute", left: 11, top: "50%", transform: "translateY(-50%)", fontSize: 13, opacity: 0.35, pointerEvents: "none" }}>🔍</span>
+              <input
+                className="adm-input"
+                style={{ marginBottom: 0, paddingLeft: 32, paddingRight: 32, borderRadius: pickerOpen ? "10px 10px 0 0" : 10 }}
+                type="text"
+                placeholder="Cerca artista o titolo…"
+                value={songSearch}
+                onChange={(e) => { setSongSearch(e.target.value); setPickerOpen(true); }}
+                onFocus={() => setPickerOpen(true)}
+              />
+              {songSearch && (
+                <button
+                  onClick={() => { setSongSearch(""); setPickerOpen(false); setSongId(""); }}
+                  style={{ position: "absolute", right: 10, top: "50%", transform: "translateY(-50%)", background: "none", border: "none", color: "rgba(255,255,255,0.3)", cursor: "pointer", fontSize: 18, lineHeight: 1, padding: 2 }}
+                >×</button>
+              )}
+            </div>
+
+            {/* Dropdown */}
+            {pickerOpen && (
+              <div className="adm-picker-dropdown" style={{ borderRadius: "0 0 14px 14px", marginBottom: 8 }}>
+                {filteredSongs.length === 0 ? (
+                  <div style={{ padding: "14px 12px", fontSize: 12, color: "rgba(255,255,255,0.25)", textAlign: "center" }}>
+                    Nessuna canzone trovata
+                  </div>
+                ) : filteredSongs.map((s) => {
+                  const isActive = songId === s.id;
+                  return (
+                    <button
+                      key={s.id}
+                      className={`adm-picker-row ${isActive ? "adm-picker-row-active" : ""}`}
+                      onClick={() => { setSongId(s.id); setSongSearch(""); setPickerOpen(false); }}
+                    >
+                      {s.image_url ? (
+                        <img src={s.image_url} alt="" style={{ width: 34, height: 34, borderRadius: 7, objectFit: "cover", flexShrink: 0 }} />
+                      ) : (
+                        <div style={{ width: 34, height: 34, borderRadius: 7, background: "rgba(255,255,255,0.06)", flexShrink: 0 }} />
+                      )}
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: isActive ? "#D4AF37" : "#ededed", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                          {s.title}
+                        </div>
+                        <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", marginTop: 1 }}>
+                          {s.artist}
+                          {s.night != null && <span style={{ marginLeft: 6, color: "rgba(212,175,55,0.4)" }}>· S{s.night}</span>}
+                        </div>
+                      </div>
+                      {s.performance_time && (
+                        <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.22)", flexShrink: 0 }}>
+                          {new Date(s.performance_time).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
+                        </span>
+                      )}
+                      {isActive && <span style={{ color: "#D4AF37", fontSize: 14, flexShrink: 0 }}>✓</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Canzone selezionata badge */}
+          {selectedSong && !pickerOpen && (
+            <div className="adm-selected-song" style={{ marginBottom: 10 }}>
+              {selectedSong.image_url && (
+                <img src={selectedSong.image_url} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: "cover", flexShrink: 0 }} />
+              )}
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#D4AF37", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{selectedSong.title}</div>
+                <div style={{ fontSize: 10, color: "rgba(212,175,55,0.5)", marginTop: 1 }}>{selectedSong.artist}</div>
+              </div>
+              <button onClick={() => { setSongId(""); setSongSearch(""); }} style={{ background: "none", border: "none", color: "rgba(255,255,255,0.25)", cursor: "pointer", fontSize: 20, padding: 0 }}>×</button>
+            </div>
+          )}
+
+          {/* Prossima con N */}
+          {nextSong && (
+            <div className="adm-next-song" style={{ marginBottom: 10 }}>
+              <span style={{ fontSize: 16 }}>⏭</span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: 10, color: "rgba(134,239,172,0.5)", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 2 }}>
+                  Prossima con <Kbd>N</Kbd>
+                </div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#ededed", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {nextSong.artist} – {nextSong.title}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Big action buttons */}
+          <div className="adm-action-grid">
+            <button
+              className="adm-action-big adm-action-big-next"
+              onClick={doNext}
+            >
+              <span style={{ fontSize: 28 }}>⏭</span>
+              <span>Next</span>
+              <Kbd>N</Kbd>
+            </button>
+            <button
+              className="adm-action-big adm-action-big-vote"
+              onClick={doVote}
+            >
+              <span style={{ fontSize: 28 }}>🗳</span>
+              <span>Votazione</span>
+              <Kbd>V</Kbd>
+            </button>
+          </div>
+
+          <button
+            className="adm-btn adm-action-big-esibi"
+            style={{ justifyContent: "center", border: "1px solid rgba(34,197,94,0.15)", borderRadius: 12 }}
+            onClick={() => {
+              if (!songId) { showToast("⚠️ Seleziona una canzone prima"); return; }
+              updateStatus("esibizione", songId);
+              showToast(`▶ Esibizione: ${selectedSong ? `${selectedSong.artist} – ${selectedSong.title}` : songId}`);
+            }}
+          >
+            ▶ Avvia esibizione canzone selezionata
+          </button>
+
+          {loading && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 10 }}>Aggiornamento in corso…</p>}
+        </div>
+
+        {/* ── Scorciatoie ── */}
+        <div className="adm-card">
           <div className="adm-section-title">⌨️ Scorciatoie tastiera</div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "6px 12px" }}>
             {[
@@ -368,35 +555,12 @@ export default function FestivalControlPage() {
               </div>
             ))}
           </div>
-
-          {nextSong && (
-            <div style={{ marginTop: 14 }}>
-              <div className="adm-next-song">
-                <span style={{ fontSize: 18 }}>⏭</span>
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontSize: 10, color: "rgba(134,239,172,0.6)", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 2 }}>
-                    Prossima con <Kbd>N</Kbd>
-                  </div>
-                  <div style={{ fontSize: 13, fontWeight: 700, color: "#ededed", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                    {nextSong.artist} – {nextSong.title}
-                  </div>
-                  {nextSong.performance_time && (
-                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", marginTop: 2, fontFamily: "monospace" }}>
-                      {new Date(nextSong.performance_time).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* ── Utenti in attesa ── */}
         {pendingProfiles.length > 0 && (
           <div className="adm-card" style={{ borderColor: "rgba(212,175,55,0.2)" }}>
-            <div className="adm-section-title" style={{ color: "#D4AF37" }}>
-              👤 Utenti in attesa ({pendingProfiles.length})
-            </div>
+            <div className="adm-section-title" style={{ color: "#D4AF37" }}>👤 Utenti in attesa ({pendingProfiles.length})</div>
             {pendingProfiles.map((p) => (
               <div key={p.id} className="adm-pending-row">
                 <div>
@@ -404,8 +568,8 @@ export default function FestivalControlPage() {
                   <p style={{ fontSize: 11, color: "rgba(255,255,255,0.28)" }}>{new Date(p.created_at).toLocaleString("it-IT")}</p>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button onClick={() => handleApprove(p.id, "approve")} className="adm-btn adm-btn-green" style={{ width: "auto", padding: "7px 14px", marginBottom: 0 }}>✓ Accetta</button>
-                  <button onClick={() => handleApprove(p.id, "reject")} className="adm-btn adm-btn-red" style={{ width: "auto", padding: "7px 14px", marginBottom: 0 }}>✕ Rifiuta</button>
+                  <button onClick={() => handleApprove(p.id, "approve")} className="adm-btn adm-btn-green" style={{ width: "auto", padding: "7px 14px", marginBottom: 0 }}>✓</button>
+                  <button onClick={() => handleApprove(p.id, "reject")} className="adm-btn adm-btn-red" style={{ width: "auto", padding: "7px 14px", marginBottom: 0 }}>✕</button>
                 </div>
               </div>
             ))}
@@ -416,226 +580,63 @@ export default function FestivalControlPage() {
         <div className="adm-card">
           <div className="adm-section-title">➕ Aggiungi Canzone</div>
           <input className="adm-input" type="text" placeholder="Titolo" value={title} onChange={(e) => setTitle(e.target.value)} />
-          <input className="adm-input" type="text" placeholder="Artista (es. Marco Mengoni feat. Ultimo)" value={artist} onChange={(e) => setArtist(e.target.value)} />
-          <input
-            className="adm-input"
-            type="text"
-            placeholder="Artista canonico per cumulative (es. Marco Mengoni)"
-            value={artistCanonical}
-            onChange={(e) => setArtistCanonical(e.target.value)}
-          />
-          <p style={{ fontSize: 10, color: "rgba(255,255,255,0.2)", marginTop: -4, marginBottom: 10, lineHeight: 1.5 }}>
-            L'artista canonico serve a collegare questa canzone alle versioni in serate diverse (es. duetti).
-            Lascia vuoto se non serve.
-          </p>
-          <select
-            value={songNight}
-            onChange={(e) => setSongNight(e.target.value !== "" ? Number(e.target.value) : "")}
-            className="adm-input"
-            style={{ backgroundColor: "#1a1a24", color: songNight !== "" ? "#ededed" : "rgba(255,255,255,0.2)" }}
-          >
+          <input className="adm-input" type="text" placeholder="Artista" value={artist} onChange={(e) => setArtist(e.target.value)} />
+          <input className="adm-input" type="text" placeholder="Artista canonico (es. Marco Mengoni)" value={artistCanonical} onChange={(e) => setArtistCanonical(e.target.value)} />
+          <select value={songNight} onChange={(e) => setSongNight(e.target.value !== "" ? Number(e.target.value) : "")} className="adm-input" style={{ backgroundColor: "#1a1a24", color: songNight !== "" ? "#ededed" : "rgba(255,255,255,0.2)" }}>
             <option value="" style={{ background: "#1a1a24" }}>-- Serata (opzionale) --</option>
-            {[1,2,3,4,5].map((n) => (
-              <option key={n} value={n} style={{ background: "#1a1a24" }}>
-                {n}ª serata
-              </option>
-            ))}
+            {[1,2,3,4,5].map((n) => <option key={n} value={n} style={{ background: "#1a1a24" }}>{n}ª serata</option>)}
           </select>
           <input className="adm-input" type="datetime-local" value={performanceTime} onChange={(e) => setPerformanceTime(e.target.value)} />
-          <input className="adm-input" type="url" placeholder="URL immagine artista (opzionale)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
-          <input className="adm-input" type="url" placeholder="URL immagine senza sfondo (opzionale)" value={imageUrlNobg} onChange={(e) => setImageUrlNobg(e.target.value)} />
+          <input className="adm-input" type="url" placeholder="URL immagine (opzionale)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
           <button onClick={handleAddSong} className="adm-btn adm-btn-gold" style={{ marginTop: 4 }}>Aggiungi</button>
-
           <hr className="adm-divider" />
           <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Importa da file JSON:</p>
-          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.18)", marginBottom: 10, fontFamily: "monospace" }}>
-            {"[{ title, artist, artist_canonical?, night?, performance_time?, image_url?, image_url_nobg? }]"}
-          </p>
+          <p style={{ fontSize: 11, color: "rgba(255,255,255,0.18)", marginBottom: 10, fontFamily: "monospace" }}>{"[{ title, artist, artist_canonical?, night?, performance_time?, image_url? }]"}</p>
           <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportJSON} style={{ display: "none" }} />
           <button onClick={() => fileInputRef.current?.click()} className="adm-btn adm-btn-gray">📂 Carica file JSON</button>
           {importStatus && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 8 }}>{importStatus}</p>}
-
           <hr className="adm-divider" />
-          <button
-            onClick={async () => {
-              if (!confirm("Sei sicuro? Verranno eliminate tutte le canzoni.")) return;
-              await fetch("/api/delete-all-songs", { method: "DELETE" });
-              await fetchSongs();
-            }}
-            className="adm-btn adm-btn-red"
-          >
+          <button onClick={async () => { if (!confirm("Sei sicuro? Verranno eliminate tutte le canzoni.")) return; await fetch("/api/delete-all-songs", { method: "DELETE" }); await fetchSongs(); }} className="adm-btn adm-btn-red">
             🗑 Elimina tutte le canzoni
           </button>
         </div>
 
-        {/* ── Controlli stato ── */}
-        <div className="adm-card">
-          <div className="adm-section-title">🎛 Controlli stato</div>
-          <button onClick={() => { updateStatus("attesa"); showToast("⏳ In attesa"); }} className="adm-btn adm-btn-gray">
-            <span>⏳ In attesa</span><Kbd>4</Kbd>
-          </button>
-          <button onClick={() => { updateStatus("presentazione"); showToast("🎤 Presentazione"); }} className="adm-btn adm-btn-blue">
-            <span>🎤 Presentazione</span><Kbd>1</Kbd>
-          </button>
-          <button onClick={() => { updateStatus("spot"); showToast("📺 Spot"); }} className="adm-btn adm-btn-yellow">
-            <span>📺 Spot Pubblicitario</span><Kbd>2</Kbd>
-          </button>
-          <button onClick={() => { updateStatus("pausa"); showToast("⏸ Pausa"); }} className="adm-btn adm-btn-gray">
-            <span>⏸ Pausa</span><Kbd>3</Kbd>
-          </button>
-          <button onClick={() => { updateStatus("classifica"); showToast("🏆 Classifica finale"); }} className="adm-btn adm-btn-gold">
-            <span>🏆 Classifica finale</span><Kbd>5</Kbd>
-          </button>
-          <button onClick={() => { updateStatus("fine"); showToast("🏁 Fine serata"); }} className="adm-btn adm-btn-red">
-            <span>🏁 Fine serata</span><Kbd>6</Kbd>
-          </button>
-
-          <hr className="adm-divider" />
-          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 10 }}>Seleziona canzone per esibizione / votazione</p>
-          <select
-            value={songId}
-            onChange={(e) => setSongId(Number(e.target.value))}
-            className="adm-input"
-            style={{ marginBottom: 12, backgroundColor: "#1a1a24", color: "#ededed" }}
-          >
-            <option value="" style={{ background: "#1a1a24" }}>-- Seleziona canzone --</option>
-            {songs
-              .filter((s) => activeNight === null || s.night === activeNight || s.night == null)
-              .map((s) => (
-                <option key={s.id} value={s.id} style={{ background: "#1a1a24" }}>
-                  {s.artist} – {s.title}
-                  {s.performance_time ? ` (${new Date(s.performance_time).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })})` : ""}
-                </option>
-              ))}
-          </select>
-          <button onClick={() => {
-            const sid = songId;
-            if (!sid) return;
-            updateStatus("esibizione", sid);
-            const song = songs.find((s) => s.id === sid);
-            showToast(`▶ Esibizione: ${song ? `${song.artist} – ${song.title}` : sid}`);
-          }} className="adm-btn adm-btn-green">
-            <span>▶ Avvia Esibizione</span><Kbd>N</Kbd>
-          </button>
-          <button onClick={() => {
-            const sid = songId;
-            if (!sid) return;
-            updateStatus("votazione", sid);
-            const song = songs.find((s) => s.id === sid);
-            showToast(`🗳 Votazione: ${song ? `${song.artist} – ${song.title}` : sid}`);
-          }} className="adm-btn adm-btn-purple">
-            <span>🗳 Apri Votazione</span><Kbd>V</Kbd>
-          </button>
-          {loading && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 10 }}>Aggiornamento in corso…</p>}
-        </div>
-
-        {/* ── Classifica finale ── */}
+        {/* ── Classifica ── */}
         <div className="adm-card">
           <div className="adm-section-title">🏆 Classifica Finale Stanza</div>
           <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
-            <input
-              className="adm-input"
-              style={{ marginBottom: 0, flex: 1 }}
-              type="text"
-              placeholder="Codice stanza (es. ABC123)"
-              value={roomCode}
-              onChange={(e) => setRoomCode(e.target.value.toUpperCase())}
-              onKeyDown={(e) => e.key === "Enter" && fetchLeaderboard()}
-            />
-            <button
-              onClick={fetchLeaderboard}
-              className="adm-btn adm-btn-gold"
-              style={{ width: "auto", padding: "0 18px", marginBottom: 0, flexShrink: 0 }}
-            >
-              Carica
-            </button>
+            <input className="adm-input" style={{ marginBottom: 0, flex: 1 }} type="text" placeholder="Codice stanza (es. ABC123)" value={roomCode} onChange={(e) => setRoomCode(e.target.value.toUpperCase())} onKeyDown={(e) => e.key === "Enter" && fetchLeaderboard()} />
+            <button onClick={fetchLeaderboard} className="adm-btn adm-btn-gold" style={{ width: "auto", padding: "0 18px", marginBottom: 0, flexShrink: 0 }}>Carica</button>
           </div>
-
-          {lbLoading && (
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", textAlign: "center", padding: "16px 0" }}>
-              Caricamento…
-            </p>
-          )}
-
-          {!lbLoading && leaderboard.length > 0 && (
-            <>
-              {(() => {
-                const withVotes = leaderboard.filter((s) => s.average !== null);
-                if (withVotes.length === 0) return null;
-                const overall = withVotes.reduce((sum, s) => sum + s.average!, 0) / withVotes.length;
-                return (
-                  <div style={{ marginBottom: 16, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 42, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px" }}>
-                      {overall.toFixed(2)}
-                    </div>
-                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", marginTop: 4 }}>
-                      media generale serata · {withVotes.length} {withVotes.length === 1 ? "canzone votata" : "canzoni votate"}
-                      {activeNight && <span style={{ marginLeft: 8, color: "rgba(212,175,55,0.5)" }}>· {activeNight}ª serata</span>}
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {leaderboard.map((song, i) => {
-                const hasVotes = song.average !== null;
-                const isFirst = hasVotes && i === 0;
-                let rowClass = "adm-lb-row ";
-                if (isFirst) rowClass += "adm-lb-row-first";
-                else if (!hasVotes) rowClass += "adm-lb-row-novotes";
-                else rowClass += "adm-lb-row-other";
-                return (
-                  <div key={song.id} className={rowClass}>
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 14 : 11, color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)", width: 22, textAlign: "center", flexShrink: 0 }}>
-                      {hasVotes ? (isFirst ? "🏆" : i + 1) : "—"}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 13, fontWeight: isFirst ? 700 : 500, color: hasVotes ? "#ededed" : "rgba(255,255,255,0.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {song.title}
-                      </div>
-                      <div style={{ fontSize: 10, color: isFirst ? "rgba(212,175,55,0.6)" : "rgba(255,255,255,0.25)", letterSpacing: "0.05em", textTransform: "uppercase", marginTop: 1 }}>
-                        {song.artist}
-                      </div>
-                    </div>
-                    {hasVotes && (
-                      <div style={{ fontSize: 10, color: "rgba(255,255,255,0.22)", fontFamily: "'DM Mono', monospace", flexShrink: 0, marginRight: 8 }}>
-                        {song.voteCount}v
-                      </div>
-                    )}
-                    <div style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 18 : 15, fontWeight: isFirst ? 700 : 400, color: isFirst ? "#D4AF37" : hasVotes ? "#ededed" : "rgba(255,255,255,0.15)", flexShrink: 0 }}>
-                      {hasVotes ? song.average!.toFixed(1) : "—"}
-                    </div>
-                  </div>
-                );
-              })}
-            </>
-          )}
-
-          {!lbLoading && leaderboard.length === 0 && roomCode && (
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textAlign: "center", padding: "16px 0" }}>
-              Nessun risultato trovato per "{roomCode}"
-            </p>
-          )}
+          {lbLoading && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", textAlign: "center", padding: "16px 0" }}>Caricamento…</p>}
+          {!lbLoading && leaderboard.length > 0 && leaderboard.map((song, i) => {
+            const hasVotes = song.average !== null;
+            const isFirst = hasVotes && i === 0;
+            return (
+              <div key={song.id} className={`adm-lb-row ${isFirst ? "adm-lb-row-first" : !hasVotes ? "adm-lb-row-novotes" : "adm-lb-row-other"}`}>
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)", width: 22, textAlign: "center", flexShrink: 0 }}>{hasVotes ? (isFirst ? "🏆" : i + 1) : "—"}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13, fontWeight: isFirst ? 700 : 500, color: hasVotes ? "#ededed" : "rgba(255,255,255,0.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</div>
+                  <div style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", textTransform: "uppercase", marginTop: 1 }}>{song.artist}</div>
+                </div>
+                {hasVotes && <div style={{ fontSize: 10, color: "rgba(255,255,255,0.22)", fontFamily: "'DM Mono', monospace", flexShrink: 0, marginRight: 8 }}>{song.voteCount}v</div>}
+                <div style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 18 : 15, color: isFirst ? "#D4AF37" : hasVotes ? "#ededed" : "rgba(255,255,255,0.15)", flexShrink: 0 }}>{hasVotes ? song.average!.toFixed(1) : "—"}</div>
+              </div>
+            );
+          })}
         </div>
 
         {/* ── Esporta voti ── */}
         <div className="adm-card">
           <div className="adm-section-title">📥 Esporta voti</div>
-          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 12 }}>
-            Scarica i voti di <strong style={{ color: "rgba(255,255,255,0.5)" }}>Nicolino</strong>, <strong style={{ color: "rgba(255,255,255,0.5)" }}>Manuè</strong> e <strong style={{ color: "rgba(255,255,255,0.5)" }}>Mieru a culuni</strong>, divisi per serata.
-          </p>
-          <button
-            onClick={() => window.open("/api/export-votes", "_blank")}
-            className="adm-btn adm-btn-blue"
-          >
+          <button onClick={() => window.open("/api/export-votes", "_blank")} className="adm-btn adm-btn-blue">
             <span>📥 Scarica voti.txt</span>
           </button>
         </div>
       </div>
 
       {toast && (
-        <div className={`adm-toast${toast.out ? " adm-toast-out" : ""}`}>
-          {toast.text}
-        </div>
+        <div className={`adm-toast${toast.out ? " adm-toast-out" : ""}`}>{toast.text}</div>
       )}
     </>
   );

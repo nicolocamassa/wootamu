@@ -1,6 +1,7 @@
 "use client";
 // useVoting.ts
-import { useState, useRef, useCallback, useEffect } from "react";
+
+import { useState, useRef, useCallback } from "react";
 import type { VotePhase, Vote } from "./types";
 
 const MAX_RETRIES = 3;
@@ -9,7 +10,6 @@ const RETRY_DELAY = 1500;
 type UseVotingProps = {
   roomCode: string;
   userToken: string | null;
-  currentUserId: number | undefined;
   currentSongId?: number | null;
   votes: Vote[];
   onVoteDone?: () => void;
@@ -24,15 +24,6 @@ export function useVoting({
   const [phase, setPhase] = useState<VotePhase>("idle");
   const [voteValue, setVoteValue] = useState(5);
   const [error, setError] = useState<string | null>(null);
-
-  // Ref interna: aggiornata ad ogni render, sempre fresca nella closure di submitVote
-  const currentSongIdRef = useRef<number | null>(null);
-  useEffect(() => {
-    if (currentSongId != null) {
-      currentSongIdRef.current = currentSongId;
-    }
-  }, [currentSongId]);
-
   const voteDoneFiredRef = useRef(false);
 
   const reset = useCallback(() => {
@@ -43,18 +34,8 @@ export function useVoting({
   }, []);
 
   const submitVote = useCallback(async () => {
-    const songId = currentSongIdRef.current;
-
-    console.log("[useVoting] submitVote", { phase, userToken, songId });
-
-    if (phase === "submitting" || !userToken) {
-      console.warn("[useVoting] bloccato: phase o userToken", { phase, userToken });
-      return;
-    }
-    if (!songId) {
-      console.warn("[useVoting] bloccato: songId nullo", { songId });
-      return;
-    }
+    if (phase === "submitting" || !userToken) return;
+    if (!currentSongId) return;
 
     setPhase("submitting");
     setError(null);
@@ -67,13 +48,17 @@ export function useVoting({
             "Content-Type": "application/json",
             Authorization: `Bearer ${userToken}`,
           },
-          body: JSON.stringify({ roomCode, songId, value: voteValue, userToken }),
+          body: JSON.stringify({
+            roomCode,
+            songId: currentSongId,
+            value: voteValue,
+            userToken,
+          }),
         });
-        // 400 = già votato, accettiamo come successo
+        // 400 = già votato, trattalo come successo
         if (res.ok || res.status === 400) return true;
         throw new Error(`HTTP ${res.status}`);
-      } catch (err) {
-        console.error("[useVoting] attempt fallito", { retriesLeft, err });
+      } catch {
         if (retriesLeft > 0) {
           await new Promise((r) => setTimeout(r, RETRY_DELAY));
           return attempt(retriesLeft - 1);
@@ -95,8 +80,7 @@ export function useVoting({
       setPhase("idle");
       setError("Errore di rete — riprova");
     }
-  // voteValue è nell'array perché deve essere letto fresco al momento del click
-  }, [phase, userToken, roomCode, voteValue, onVoteDone]);
+  }, [phase, currentSongId, userToken, voteValue, roomCode, onVoteDone]);
 
   return {
     voteValue,

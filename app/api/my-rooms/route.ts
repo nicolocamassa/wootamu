@@ -1,53 +1,23 @@
+// /api/my-rooms/route.ts
 import { prisma } from "@/_lib/prisma";
 import { NextResponse } from "next/server";
-
 export async function GET(req: Request) {
   try {
     const userToken = req.headers.get("Authorization")?.replace("Bearer ", "");
     if (!userToken) return NextResponse.json({ rooms: [], nickname: null });
-
-    let profileId: number | null = null;
-
-    // Token temporaneo (utente senza stanze)
+    let profile;
     if (userToken.startsWith("profile_")) {
-      profileId = parseInt(userToken.replace("profile_", ""));
+      profile = await prisma.profile.findUnique({ where: { id: parseInt(userToken.replace("profile_", "")) } });
     } else {
-      const user = await prisma.user.findUnique({
-        where: { userToken },
-        include: { profile: true },
-      });
-      profileId = user?.profile?.id ?? null;
+      const member = await prisma.roomMember.findUnique({ where: { userToken }, include: { profile: true } });
+      profile = member?.profile ?? null;
     }
-
-    if (!profileId) return NextResponse.json({ rooms: [], nickname: null });
-
-    const profile = await prisma.profile.findUnique({
-      where: { id: profileId },
-    });
-
-    const allUsers = await prisma.user.findMany({
-      where: { profile_id: profileId },
-      include: { room: true },
-    });
-
-    const rooms = await Promise.all(
-  allUsers.map(async (u) => {
-    const usersCount = await prisma.user.count({
-      where: { room_id: u.room_id },
-    });
-    return {
-      code: u.room.code,
-      event: u.room.event ?? null,
-      isHost: u.isHost,
-      userToken: u.userToken,
-      usersCount,
-    };
-  })
-);
-
-    return NextResponse.json({ rooms, nickname: profile?.username ?? null });
-  } catch (error) {
-    console.error(error);
-    return NextResponse.json({ rooms: [], nickname: null });
-  }
+    if (!profile) return NextResponse.json({ rooms: [], nickname: null });
+    const memberships = await prisma.roomMember.findMany({ where: { profile_id: profile.id }, include: { room: true } });
+    const rooms = await Promise.all(memberships.map(async (m) => ({
+      code: m.room.code, name: m.room.name ?? null, isHost: m.isHost, userToken: m.userToken,
+      usersCount: await prisma.roomMember.count({ where: { room_id: m.room_id } }),
+    })));
+    return NextResponse.json({ rooms, nickname: profile.username });
+  } catch (err) { console.error(err); return NextResponse.json({ rooms: [], nickname: null }); }
 }

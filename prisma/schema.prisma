@@ -7,20 +7,34 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model Room {
-  id              Int      @id @default(autoincrement())
-  code            String   @unique
-  event           String?
-  night           Int?     // serata attiva: 1, 2, 3… — impostata dall'admin
-  current_status  String?
-  current_song_id Int?
-  created_at      DateTime @default(now())
+// ─── FESTIVAL ────────────────────────────────────────────────────────────────
 
-  current_song Song?     @relation("CurrentSong", fields: [current_song_id], references: [id])
-  users        User[]
-  songs        Song[]    @relation("RoomSongs")
-  comments     Comment[]
+model Room {
+  id         Int      @id @default(autoincrement())
+  code       String   @unique
+  name       String?
+  night      Int?
+  created_at DateTime @default(now())
+
+  members  RoomMember[]
+  comments Comment[]
 }
+
+model RoomMember {
+  id         Int      @id @default(autoincrement())
+  room_id    Int
+  profile_id Int
+  isHost     Boolean  @default(false)
+  userToken  String   @unique @default(uuid())
+  joined_at  DateTime @default(now())
+
+  room    Room    @relation(fields: [room_id], references: [id])
+  profile Profile @relation(fields: [profile_id], references: [id])
+
+  @@unique([room_id, profile_id])
+}
+
+// ─── UTENTI ──────────────────────────────────────────────────────────────────
 
 model Profile {
   id         Int      @id @default(autoincrement())
@@ -28,39 +42,24 @@ model Profile {
   pin        String
   approved   Boolean  @default(false)
   created_at DateTime @default(now())
-  users      User[]
-}
 
-model User {
-  id         Int      @id @default(autoincrement())
-  username   String
-  userToken  String   @unique @default(uuid())
-  isHost     Boolean  @default(false)
-  room_id    Int
-  profile_id Int?
-  created_at DateTime @default(now())
-
-  room      Room       @relation(fields: [room_id], references: [id])
-  profile   Profile?   @relation(fields: [profile_id], references: [id])
+  rooms     RoomMember[]
   votes     Vote[]
   reactions Reaction[]
   comments  Comment[]
 }
 
+// ─── CANZONI ─────────────────────────────────────────────────────────────────
+
 model Song {
-  id               Int       @id @default(autoincrement())
+  id               Int      @id @default(autoincrement())
   title            String
   artist           String
   artist_canonical String?
   image_url        String?
-  image_url_nobg   String?
-  room_id          Int?
-  performance_time DateTime?
-  performed        Boolean   @default(false)
-  created_at       DateTime  @default(now())
+  created_at       DateTime @default(now())
 
-  room                 Room?            @relation("RoomSongs", fields: [room_id], references: [id])
-  current_in           Room[]           @relation("CurrentSong")
+  performances         SongPerformance[]
   votes                Vote[]
   reactions            Reaction[]
   comments             Comment[]
@@ -68,43 +67,65 @@ model Song {
   lastFestivalStatuses FestivalStatus[] @relation("LastSong")
 }
 
+model SongPerformance {
+  id               Int       @id @default(autoincrement())
+  song_id          Int
+  night            Int
+  performance_time DateTime?
+  performed        Boolean   @default(false)
+
+  song Song @relation(fields: [song_id], references: [id])
+
+  @@unique([song_id, night])
+}
+
+// ─── VOTI ────────────────────────────────────────────────────────────────────
+
+model Vote {
+  id         Int      @id @default(autoincrement())
+  value      Float
+  profile_id Int
+  song_id    Int
+  night      Int
+  created_at DateTime @default(now())
+
+  profile Profile @relation(fields: [profile_id], references: [id])
+  song    Song    @relation(fields: [song_id], references: [id])
+
+  @@unique([profile_id, song_id, night])
+}
+
+// ─── REACTIONS ───────────────────────────────────────────────────────────────
+
+model Reaction {
+  id         Int      @id @default(autoincrement())
+  type       String
+  profile_id Int
+  song_id    Int
+  created_at DateTime @default(now())
+
+  profile Profile @relation(fields: [profile_id], references: [id])
+  song    Song    @relation(fields: [song_id], references: [id])
+}
+
+// ─── COMMENTI ────────────────────────────────────────────────────────────────
+
 model Comment {
   id         Int      @id @default(autoincrement())
   text       String
-  user_id    Int
+  profile_id Int
   song_id    Int
   room_id    Int
   likes      Int      @default(0)
   dislikes   Int      @default(0)
   created_at DateTime @default(now())
 
-  user User @relation(fields: [user_id], references: [id])
-  song Song @relation(fields: [song_id], references: [id])
-  room Room @relation(fields: [room_id], references: [id])
+  profile Profile @relation(fields: [profile_id], references: [id])
+  song    Song    @relation(fields: [song_id], references: [id])
+  room    Room    @relation(fields: [room_id], references: [id])
 }
 
-model Vote {
-  id         Int      @id @default(autoincrement())
-  value      Float
-  user_id    Int
-  song_id    Int
-  night      Int?
-  created_at DateTime @default(now())
-
-  user User @relation(fields: [user_id], references: [id])
-  song Song @relation(fields: [song_id], references: [id])
-}
-
-model Reaction {
-  id         Int      @id @default(autoincrement())
-  type       String
-  user_id    Int
-  song_id    Int
-  created_at DateTime @default(now())
-
-  user User @relation(fields: [user_id], references: [id])
-  song Song @relation(fields: [song_id], references: [id])
-}
+// ─── STATO FESTIVAL ──────────────────────────────────────────────────────────
 
 model FestivalStatus {
   id         Int      @id @default(1)

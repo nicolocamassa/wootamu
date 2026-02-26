@@ -1,5 +1,5 @@
 "use client";
-// Classifica.tsx — classifica voti per singola canzone con tab affinità
+// Classifica.tsx
 
 import React, { useState } from "react";
 import { Trophy, Users } from "lucide-react";
@@ -10,7 +10,7 @@ const RESULTS_DURATION = 60;
 type ClassificaProps = {
   votes: Vote[];
   users: User[];
-  currentUserId: number;
+  currentUser: User;
   timeLeft: number | null;
   roomCode: string;
   userRooms: UserRoom[];
@@ -20,22 +20,15 @@ type ClassificaProps = {
   roomUsers: Record<string, User[]>;
 };
 
-const compatColor = (p: number) =>
-  p >= 80 ? "#6ee7b7" : p >= 60 ? "#D4AF37" : p >= 40 ? "#fb923c" : "#f87171";
-
-const compatLabel = (p: number) =>
-  p >= 85 ? "Gemelli" : p >= 70 ? "In sintonia" : p >= 55 ? "Simili" : p >= 40 ? "Diversi" : "Opposti";
-
-function singleSongCompat(myValue: number, theirValue: number): number {
-  return Math.max(0, Math.round((1 - Math.abs(myValue - theirValue) / 9) * 100));
-}
+const compatColor = (p: number) => p >= 80 ? "#6ee7b7" : p >= 60 ? "#D4AF37" : p >= 40 ? "#fb923c" : "#f87171";
+const compatLabel = (p: number) => p >= 85 ? "Gemelli" : p >= 70 ? "In sintonia" : p >= 55 ? "Simili" : p >= 40 ? "Diversi" : "Opposti";
 
 type View = "classifica" | "affinita";
 
 export function Classifica({
   votes,
   users,
-  currentUserId,
+  currentUser,
   timeLeft,
   roomCode,
   userRooms,
@@ -60,8 +53,8 @@ export function Classifica({
     : users;
 
   const sorted = [...activeUsers].sort((a, b) => {
-    const vA = activeVotes.find((v) => v.user_id === a.id)?.value ?? -1;
-    const vB = activeVotes.find((v) => v.user_id === b.id)?.value ?? -1;
+    const vA = activeVotes.find((v) => v.profile_id === a.profile_id)?.value ?? -1;
+    const vB = activeVotes.find((v) => v.profile_id === b.profile_id)?.value ?? -1;
     return vB - vA;
   });
 
@@ -71,8 +64,8 @@ export function Classifica({
     : null;
 
   // Compatibilità sulla singola canzone
-  const myVote = activeVotes.find((v) => v.user_id === currentUserId);
-  const othersVotes = activeVotes.filter((v) => v.user_id !== currentUserId);
+  const myVote = activeVotes.find((v) => v.profile_id === currentUser.profile_id);
+  const othersVotes = activeVotes.filter((v) => v.profile_id !== currentUser.profile_id);
 
   let roomCompat: number | null = null;
   if (myVote && othersVotes.length > 0) {
@@ -81,14 +74,15 @@ export function Classifica({
   }
 
   const personCompats = activeUsers
-    .filter((u) => u.id !== currentUserId)
+    .filter((u) => u.profile_id !== currentUser.profile_id)
     .map((u) => {
-      const their = activeVotes.find((v) => v.user_id === u.id);
+      const their = activeVotes.find((v) => v.profile_id === u.profile_id);
       if (!myVote || !their) return null;
-      return { user: u, pct: singleSongCompat(myVote.value, their.value) };
+      const pct = Math.max(0, Math.round((1 - Math.abs(myVote.value - their.value) / 9) * 100));
+      return { user: u, pct, theirValue: their.value };
     })
     .filter(Boolean)
-    .sort((a, b) => b!.pct - a!.pct) as { user: User; pct: number }[];
+    .sort((a, b) => b!.pct - a!.pct) as { user: User; pct: number; theirValue: number }[];
 
   const hasCompat = myVote !== undefined && (roomCompat !== null || personCompats.length > 0);
 
@@ -175,8 +169,8 @@ export function Classifica({
               Caricamento utenti…
             </div>
           ) : sorted.map((u, i) => {
-            const vote = activeVotes.find((v) => v.user_id === u.id);
-            const isMe = u.id === currentUserId;
+            const vote = activeVotes.find((v) => v.profile_id === u.profile_id);
+            const isMe = u.profile_id === currentUser.profile_id;
             const isFirst = !!vote && i === 0;
             let rowClass = "ib-row ";
             if (isFirst) rowClass += "ib-row-first";
@@ -208,27 +202,20 @@ export function Classifica({
       {/* ── VISTA AFFINITÀ ── */}
       {view === "affinita" && (
         <div style={{ display: "flex", flexDirection: "column", gap: 10, overflowY: "auto", flex: 1 }}>
-
-          {/* Il mio voto */}
           {myVote && (
-            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
               <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>Il tuo voto</span>
               <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 16, color: "#ededed" }}>{myVote.value.toFixed(1)}</span>
             </div>
           )}
 
-          {/* Vs stanza */}
           {roomCompat !== null && (
             <div style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 12, padding: "12px 14px" }}>
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
-                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 500 }}>Stanza</span>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.4)", fontWeight: 500 }}>Con la stanza</span>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 5 }}>
-                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 22, color: compatColor(roomCompat), lineHeight: 1 }}>
-                    {roomCompat}%
-                  </span>
-                  <span style={{ fontSize: 10, color: compatColor(roomCompat), opacity: 0.7 }}>
-                    {compatLabel(roomCompat)}
-                  </span>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 22, color: compatColor(roomCompat), lineHeight: 1 }}>{roomCompat}%</span>
+                  <span style={{ fontSize: 10, color: compatColor(roomCompat), opacity: 0.7 }}>{compatLabel(roomCompat)}</span>
                 </div>
               </div>
               <div style={{ height: 3, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden" }}>
@@ -236,44 +223,28 @@ export function Classifica({
               </div>
               {average !== null && myVote && (
                 <div style={{ display: "flex", justifyContent: "space-between", marginTop: 8 }}>
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>
-                    Tu: <span style={{ color: "rgba(255,255,255,0.5)" }}>{myVote.value.toFixed(1)}</span>
-                  </span>
-                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>
-                    Media stanza: <span style={{ color: "rgba(255,255,255,0.5)" }}>{average.toFixed(1)}</span>
-                  </span>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>Tu: <span style={{ color: "rgba(255,255,255,0.5)" }}>{myVote.value.toFixed(1)}</span></span>
+                  <span style={{ fontSize: 10, color: "rgba(255,255,255,0.2)" }}>Media: <span style={{ color: "rgba(255,255,255,0.5)" }}>{average.toFixed(1)}</span></span>
                 </div>
               )}
             </div>
           )}
 
-          {/* Vs singoli */}
           {personCompats.length > 0 && (
             <>
               <p style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.07em", textTransform: "uppercase", margin: "2px 0 2px", fontWeight: 500 }}>
                 Persona per persona
               </p>
-              {personCompats.map(({ user: u, pct }) => {
-                const their = activeVotes.find((v) => v.user_id === u.id);
-                return (
-                  <div key={u.id} className="ib-row ib-row-other">
-                    <span style={{ flex: 1, fontSize: 13, color: "rgba(255,255,255,0.55)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                      {u.username}
-                    </span>
-                    {their && (
-                      <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.25)", marginRight: 8, flexShrink: 0 }}>
-                        {their.value.toFixed(1)}
-                      </span>
-                    )}
-                    <div style={{ width: 50, height: 3, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden", flexShrink: 0, marginRight: 8 }}>
-                      <div style={{ height: "100%", width: `${pct}%`, borderRadius: 999, background: compatColor(pct), transition: "width 0.6s ease" }} />
-                    </div>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: compatColor(pct), flexShrink: 0, minWidth: 34, textAlign: "right" }}>
-                      {pct}%
-                    </span>
+              {personCompats.map(({ user: u, pct, theirValue }) => (
+                <div key={u.id} className="ib-row ib-row-other">
+                  <span style={{ flex: 1, fontSize: 13, color: "rgba(255,255,255,0.55)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{u.username}</span>
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.25)", marginRight: 8, flexShrink: 0 }}>{theirValue.toFixed(1)}</span>
+                  <div style={{ width: 50, height: 3, borderRadius: 999, background: "rgba(255,255,255,0.06)", overflow: "hidden", flexShrink: 0, marginRight: 8 }}>
+                    <div style={{ height: "100%", width: `${pct}%`, borderRadius: 999, background: compatColor(pct), transition: "width 0.6s ease" }} />
                   </div>
-                );
-              })}
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: compatColor(pct), flexShrink: 0, minWidth: 34, textAlign: "right" }}>{pct}%</span>
+                </div>
+              ))}
             </>
           )}
         </div>
@@ -284,7 +255,7 @@ export function Classifica({
         <div style={{ display: "flex", gap: 6, marginTop: 12, flexShrink: 0, justifyContent: "center" }}>
           {userRooms.map((r, i) => (
             <button key={r.code} onClick={() => onRoomChange(i)} style={{ padding: "4px 10px", borderRadius: 999, border: `1px solid ${i === activeRoomIndex ? "rgba(212,175,55,0.3)" : "rgba(255,255,255,0.07)"}`, fontSize: 10, fontFamily: "'DM Mono', monospace", fontWeight: 500, cursor: "pointer", background: i === activeRoomIndex ? "rgba(212,175,55,0.15)" : "rgba(255,255,255,0.05)", color: i === activeRoomIndex ? "#D4AF37" : "rgba(255,255,255,0.35)", transition: "all 0.15s" }}>
-              {r.event}
+              {r.code}
             </button>
           ))}
         </div>

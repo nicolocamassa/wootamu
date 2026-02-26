@@ -2,24 +2,16 @@
 import { prisma } from "@/_lib/prisma";
 import { pusher } from "@/_lib/pusher";
 import { NextResponse } from "next/server";
-
 export async function POST(req: Request) {
   try {
     const { night } = await req.json();
-
-    if (!night || typeof night !== "number") {
-      return NextResponse.json({ error: "night è obbligatorio" }, { status: 400 });
-    }
-
-    // Aggiorna TUTTE le room
+    if (!night || typeof night !== "number")
+      return NextResponse.json({ error: "night obbligatorio" }, { status: 400 });
     await prisma.room.updateMany({ data: { night } });
-
-    // Notifica tutti i client via Pusher
     await pusher.trigger("festival", "night-update", { night });
-
     return NextResponse.json({ ok: true, night });
   } catch (err) {
-    console.error("Errore set-night:", err);
-    return NextResponse.json({ error: "Errore interno server" }, { status: 500 });
+    console.error(err);
+    return NextResponse.json({ error: "Errore server" }, { status: 500 });
   }
 }

@@ -10,8 +10,11 @@ export async function GET(req: NextRequest) {
     if (!room) return NextResponse.json([], { status: 404 });
 
     const votes = await prisma.vote.findMany({
-      where: { user: { room_id: room.id } },
-      select: { id: true, user_id: true, song_id: true, value: true },
+      where: {
+        profile: { rooms: { some: { room_id: room.id } } },
+        ...(room.night != null ? { night: room.night } : {}),
+      },
+      select: { id: true, profile_id: true, song_id: true, value: true },
     });
 
     return NextResponse.json(votes);

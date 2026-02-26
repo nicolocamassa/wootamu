@@ -10,13 +10,13 @@ type CurrentEventProps = {
   userToken: string | null;
   onCommentSent: () => void;
   hasCommented: boolean;
-  users: { id: number; username: string }[];
-  votes?: { user_id: number; value: number }[];
-  currentUser?: { id: number; username: string };
+  users: { id: number; profile_id: number; username: string }[];
+  votes?: { profile_id: number; value: number }[];
+  currentUser?: { id: number; profile_id: number; username: string };
   hasVoted?: boolean;
-  // FIX: callback opzionale per notificare RoomClient che qualcuno è entrato/uscito
   onUserJoined?: () => void;
 };
+
 type MessageType = "join" | "leave" | "stat" | "vote" | "alert";
 type Message = { id: number; text: string; type: MessageType };
 type PusherNotification = {
@@ -24,7 +24,7 @@ type PusherNotification = {
   text: string;
   type: MessageType;
   voteValue?: number;
-  voterUserId?: number;
+  voterProfileId?: number;
 };
 type RoomStats = {
   averageTotal: number | null;
@@ -46,7 +46,7 @@ const msgColor = (type: MessageType) => {
 
 const buildPanels = (
   s: RoomStats | null,
-  v: { user_id: number; value: number }[],
+  v: { profile_id: number; value: number }[],
   ft: string | null,
   hv: boolean,
   usersCount: number,
@@ -112,19 +112,23 @@ export default function CurrentEvent({
   const festivalTypeRef = useRef(festivalType);
   const hasVotedRef = useRef(hasVoted);
   const usersRef = useRef(users);
-  // FIX: ref per tutti i valori usati nel handler Pusher, così il bind è stabile con []
   const roomCodeRef = useRef(roomCode);
-  const currentUserIdRef = useRef(currentUser?.id);
+  const currentUserProfileIdRef = useRef(currentUser?.profile_id);
   const onUserJoinedRef = useRef(onUserJoined);
+  // Ref persistente: una volta true non torna mai false finché non cambia canzone
+  const hasVotedEverRef = useRef(false);
 
   useEffect(() => { festivalTypeRef.current = festivalType; }, [festivalType]);
-  useEffect(() => { hasVotedRef.current = hasVoted; }, [hasVoted]);
+  useEffect(() => {
+    hasVotedRef.current = hasVoted;
+    if (hasVoted) hasVotedEverRef.current = true;
+  }, [hasVoted]);
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
-  useEffect(() => { currentUserIdRef.current = currentUser?.id; }, [currentUser?.id]);
+  useEffect(() => { currentUserProfileIdRef.current = currentUser?.profile_id; }, [currentUser?.profile_id]);
   useEffect(() => { onUserJoinedRef.current = onUserJoined; }, [onUserJoined]);
 
-  // ─── Queue ────────────────────────────────────────────────────────────────
+  // ─── Queue ───────────────────────────────────────────────────────────────
   const showNext = () => {
     if (queueRef.current.length === 0) {
       setCurrentMessage(null);
@@ -143,20 +147,18 @@ export default function CurrentEvent({
     if (!isShowingRef.current) showNext();
   };
 
-  // ─── Pusher: solo ricezione ───────────────────────────────────────────────
-  // onFestivalEvent usa un event bus a livello di modulo: sicuro con StrictMode.
-  // Il cleanup rimuove il listener dal bus senza toccare il canale Pusher.
+  // ─── Pusher ──────────────────────────────────────────────────────────────
   useEffect(() => {
     const handleNotification = (data: PusherNotification) => {
       if (data.roomCode !== roomCodeRef.current) return;
 
-      if (data.type === "vote" && data.voterUserId !== undefined) {
-        const isMe = data.voterUserId === currentUserIdRef.current;
+      if (data.type === "vote" && data.voterProfileId !== undefined) {
+        const isMe = data.voterProfileId === currentUserProfileIdRef.current;
         if (isMe) return;
-        const showValue = festivalTypeRef.current !== "votazione" || hasVotedRef.current;
-        const voterName = usersRef.current.find((u) => u.id === data.voterUserId)?.username ?? "Qualcuno";
+        const showValue = festivalTypeRef.current !== "votazione" || hasVotedEverRef.current;
+        const voterName = usersRef.current.find((u) => u.profile_id === data.voterProfileId)?.username ?? "Qualcuno";
         const displayText = showValue && data.voteValue !== undefined
-          ? `${voterName} ha votato ${data.voteValue.toFixed(1)} ✅`
+          ? `${voterName} ha dato: ${data.voteValue.toFixed(1)} ✅`
           : `${voterName} ha votato ✅`;
         enqueue(displayText, "vote");
         return;
@@ -167,7 +169,6 @@ export default function CurrentEvent({
         setTimeout(() => setFlash(false), 1000);
         onUserJoinedRef.current?.();
       }
-
       if (data.type === "leave") {
         onUserJoinedRef.current?.();
       }
@@ -185,9 +186,11 @@ export default function CurrentEvent({
     isShowingRef.current = false;
     if (timerRef.current) clearTimeout(timerRef.current);
     setPanelIndex(0);
+    // Reset hasVotedEver al cambio canzone
+    hasVotedEverRef.current = false;
   }, [songId]);
 
-  // ─── Stats fetch ──────────────────────────────────────────────────────────
+  // ─── Stats fetch ─────────────────────────────────────────────────────────
   useEffect(() => {
     const fetchStats = async () => {
       try {
@@ -215,10 +218,7 @@ export default function CurrentEvent({
     panelResetRef.current = setTimeout(() => setPanelIndex(0), 8000);
   };
 
-  const handleTouchStart = (e: React.TouchEvent) => {
-    touchStartX.current = e.touches[0].clientX;
-  };
-
+  const handleTouchStart = (e: React.TouchEvent) => { touchStartX.current = e.touches[0].clientX; };
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (touchStartX.current === null) return;
     const dx = e.changedTouches[0].clientX - touchStartX.current;
@@ -252,22 +252,14 @@ export default function CurrentEvent({
   return (
     <div
       style={{
-        width: "100%",
-        borderRadius: 14,
+        width: "100%", borderRadius: 14,
         border: `1px solid ${flash ? "rgba(147,197,253,0.3)" : "rgba(255,255,255,0.07)"}`,
-        background: "#0F0F14",
-        height: 64,
-        display: "flex",
-        alignItems: "center",
-        justifyContent: "center",
-        transition: "border-color 0.4s ease",
-        marginBottom: 4,
-        fontFamily: "'Inter', sans-serif",
-        overflow: "hidden",
-        boxSizing: "border-box",
-        padding: "0 12px",
-        position: "relative",
-        userSelect: "none",
+        background: "#0F0F14", height: 64,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        transition: "border-color 0.4s ease", marginBottom: 4,
+        fontFamily: "'Inter', sans-serif", overflow: "hidden",
+        boxSizing: "border-box", padding: "0 12px",
+        position: "relative", userSelect: "none",
       }}
       onTouchStart={festivalType !== "esibizione" ? handleTouchStart : undefined}
       onTouchEnd={festivalType !== "esibizione" ? handleTouchEnd : undefined}
@@ -281,35 +273,16 @@ export default function CurrentEvent({
           ) : (
             <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
               <input
-                type="text"
-                maxLength={80}
-                placeholder="Scrivi un commento…"
-                value={text}
-                onChange={(e) => setText(e.target.value)}
+                type="text" maxLength={80} placeholder="Scrivi un commento…"
+                value={text} onChange={(e) => setText(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-                style={{
-                  flex: 1,
-                  background: "transparent",
-                  border: "none",
-                  outline: "none",
-                  fontSize: 13,
-                  color: "#ededed",
-                  fontFamily: "'Inter', sans-serif",
-                  caretColor: "#D4AF37",
-                }}
+                style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: "#ededed", fontFamily: "'Inter', sans-serif", caretColor: "#D4AF37" }}
               />
               <button
-                onClick={handleSubmit}
-                disabled={!text.trim() || loading}
+                onClick={handleSubmit} disabled={!text.trim() || loading}
                 style={{
-                  flexShrink: 0,
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: 32,
-                  height: 32,
-                  borderRadius: 9,
-                  border: "none",
+                  flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                  width: 32, height: 32, borderRadius: 9, border: "none",
                   cursor: text.trim() && !loading ? "pointer" : "not-allowed",
                   background: text.trim() && !loading ? "#D4AF37" : "rgba(255,255,255,0.06)",
                   color: text.trim() && !loading ? "#0F0F14" : "rgba(255,255,255,0.2)",
@@ -322,23 +295,17 @@ export default function CurrentEvent({
           )}
         </div>
       ) : (
-        /* ── Notifiche + panel swipabili ── */
         <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}>
           <div style={{ display: "flex", alignItems: "center", justifyContent: "center", flex: 1, width: "100%", overflow: "hidden" }}>
             {currentMessage ? (
               <p
                 key={currentMessage.id}
                 style={{
-                  fontSize: 12,
-                  textAlign: "center",
-                  margin: 0,
+                  fontSize: 12, textAlign: "center", margin: 0,
                   color: msgColor(currentMessage.type),
                   animation: "ce-fadein 0.3s ease both",
-                  whiteSpace: "nowrap",
-                  overflow: "hidden",
-                  textOverflow: "ellipsis",
-                  maxWidth: "100%",
-                  lineHeight: 1,
+                  whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
+                  maxWidth: "100%", lineHeight: 1,
                 }}
               >
                 {currentMessage.text}
@@ -346,48 +313,27 @@ export default function CurrentEvent({
             ) : (
               <div style={{ textAlign: "center" }}>
                 {panels[safeIndex]?.label ? (
-                  <p style={{
-                    fontSize: 9,
-                    color: "rgba(255,255,255,0.22)",
-                    margin: "0 0 3px",
-                    letterSpacing: "0.07em",
-                    textTransform: "uppercase",
-                    lineHeight: 1,
-                  }}>
+                  <p style={{ fontSize: 9, color: "rgba(255,255,255,0.22)", margin: "0 0 3px", letterSpacing: "0.07em", textTransform: "uppercase", lineHeight: 1 }}>
                     {panels[safeIndex].label}
                   </p>
                 ) : null}
-                <p style={{
-                  fontSize: 13,
-                  color: panels[safeIndex]?.color ?? "rgba(255,255,255,0.55)",
-                  margin: 0,
-                  lineHeight: 1,
-                  fontWeight: safeIndex === 0 ? 400 : 500,
-                }}>
+                <p style={{ fontSize: 13, color: panels[safeIndex]?.color ?? "rgba(255,255,255,0.55)", margin: 0, lineHeight: 1, fontWeight: safeIndex === 0 ? 400 : 500 }}>
                   {panels[safeIndex]?.value ?? ""}
                 </p>
               </div>
             )}
           </div>
 
-          {/* Dots navigazione */}
           {panels.length > 1 && !currentMessage && (
-            <div style={{
-              position: "absolute",
-              bottom: 6,
-              display: "flex",
-              gap: 4,
-            }}>
+            <div style={{ position: "absolute", bottom: 6, display: "flex", gap: 4 }}>
               {panels.map((_, i) => (
                 <div
                   key={i}
                   onClick={() => { setPanelIndex(i); schedulePanelReset(); }}
                   style={{
-                    width: 3, height: 3,
-                    borderRadius: "50%",
+                    width: 3, height: 3, borderRadius: "50%",
                     background: i === safeIndex ? "rgba(255,255,255,0.4)" : "rgba(255,255,255,0.1)",
-                    cursor: "pointer",
-                    transition: "background 0.2s",
+                    cursor: "pointer", transition: "background 0.2s",
                   }}
                 />
               ))}
@@ -397,10 +343,7 @@ export default function CurrentEvent({
       )}
 
       <style>{`
-        @keyframes ce-fadein {
-          from { opacity: 0; transform: translateY(3px); }
-          to   { opacity: 1; transform: translateY(0); }
-        }
+        @keyframes ce-fadein { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: translateY(0); } }
         input::placeholder { color: rgba(255,255,255,0.2); }
       `}</style>
     </div>

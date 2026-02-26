@@ -1,23 +1,14 @@
-import { NextRequest, NextResponse } from "next/server";
+// /api/get-votes/route.ts
 import { prisma } from "@/_lib/prisma";
-
+import { NextRequest, NextResponse } from "next/server";
 export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const songId = parseInt(searchParams.get("songId") ?? "");
-
-  if (!songId) {
-    return NextResponse.json({ error: "Missing songId" }, { status: 400 });
-  }
-
+  const songId = parseInt(req.nextUrl.searchParams.get("songId") ?? "");
+  if (!songId) return NextResponse.json({ error: "Missing songId" }, { status: 400 });
   try {
     const votes = await prisma.vote.findMany({
       where: { song_id: songId },
-      select: { id: true, user_id: true, value: true },
+      select: { id: true, profile_id: true, value: true },
     });
-
     return NextResponse.json(votes);
-  } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "Internal server error" }, { status: 500 });
-  }
+  } catch (err) { console.error(err); return NextResponse.json({ error: "Internal error" }, { status: 500 }); }
 }

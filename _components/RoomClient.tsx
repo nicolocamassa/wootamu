@@ -1,48 +1,45 @@
 "use client";
+
 import { useState, useEffect, useRef } from "react";
 import CurrentEvent from "./CurrentEvent";
 import SongList from "./SongList";
 import InteractBox from "./InteractBox";
 import Header from "./Header";
 import { festivalChannel } from "@/_lib/pusherClient";
+import type { Room, User, UserRoom, Vote } from "./types";
 
-type Vote = { id: number; user_id: number; value: number };
-type UserRoom = { code: string; id: number; event: string | null; userToken: string };
-type Song = { id: number; title: string; artist: string; votes: Vote[] };
-type User = { id: number; username: string; isHost: boolean; userToken: string };
-type Room = { code: string; users: User[]; songs: Song[] };
 type StatusType = "attesa" | "presentazione" | "esibizione" | "votazione" | "spot" | "pausa" | "fine";
+
+function membersToUsers(members: Room["members"]): User[] {
+  return members.map((m) => ({
+    id: m.id,
+    profile_id: m.profile_id,
+    username: m.profile.username,
+    isHost: m.isHost,
+    userToken: m.userToken,
+  }));
+}
 
 export default function RoomClient({ roomCode }: { roomCode: string }) {
   const [room, setRoom] = useState<Room | null>(null);
-  const [votedUserIds, setVotedUserIds] = useState<number[]>([]);
+  const [userToken, setUserToken] = useState<string | null>(null);
+  const [userRooms, setUserRooms] = useState<UserRoom[]>([]);
+  const [currentNight, setCurrentNight] = useState<number | null>(null);
+
+  const [votedProfileIds, setVotedProfileIds] = useState<number[]>([]);
   const [currentVotes, setCurrentVotes] = useState<Vote[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [festivalType, setFestivalType] = useState<StatusType | null>(null);
   const [currentSongId, setCurrentSongId] = useState<number | null>(null);
-  const [hasCommented, setHasCommented] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
-  const [userToken, setUserToken] = useState<string | null>(null);
-  const [userRooms, setUserRooms] = useState<UserRoom[]>([]);
+  const [hasCommented, setHasCommented] = useState(false);
 
-  const topRef = useRef<HTMLDivElement>(null);
   const pollingRef = useRef<NodeJS.Timeout | null>(null);
 
-  // Leggi il token una volta sola
   useEffect(() => {
     setUserToken(localStorage.getItem("userToken"));
   }, []);
 
-  // Misura altezza blocco superiore
-  useEffect(() => {
-    const el = topRef.current;
-    if (!el) return;
-    const ro = new ResizeObserver(() => {}); // solo per forzare re-render se serve
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, []);
-
-  // fetchRoom usa sempre il token fresco da localStorage (evita stale closure)
   const fetchRoom = async () => {
     const token = localStorage.getItem("userToken");
     if (!token) return;
@@ -50,39 +47,35 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
       const res = await fetch(`/api/get-room?code=${roomCode}`, {
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (!res.ok) throw new Error();
+      if (!res.ok) return;
       const data = await res.json();
       setRoom(data.room);
+      if (data.room?.night != null) setCurrentNight(data.room.night);
       if (data.userRooms) setUserRooms(data.userRooms);
     } catch (err) {
-      console.error("[fetchRoom] errore:", err);
+      console.error("[fetchRoom]", err);
     }
   };
 
-  // Fetch iniziale + Pusher — tutto insieme, parte quando userToken è pronto
   useEffect(() => {
     if (!userToken) return;
-
     fetchRoom();
-
-    // ── Polling leggero ogni 10s come safety net ─────────────────────────
     pollingRef.current = setInterval(fetchRoom, 10000);
+    const onVisibility = () => { if (document.visibilityState === "visible") fetchRoom(); };
+    document.addEventListener("visibilitychange", onVisibility);
+    const onRoomUpdate = ({ roomCode: rc }: { roomCode: string }) => { if (rc === roomCode) fetchRoom(); };
+    festivalChannel.bind("room-update", onRoomUpdate);
 
-    // ── Refetch quando l'utente torna sulla tab o app in foreground ──────
-    const handleVisibility = () => {
-      if (document.visibilityState === "visible") fetchRoom();
+    // Ascolta night-update da Pusher — aggiorna subito senza aspettare il polling
+    const onNightUpdate = ({ night }: { night: number }) => {
+      setCurrentNight(night);
     };
-    document.addEventListener("visibilitychange", handleVisibility);
-
-    const handleRoomUpdate = ({ roomCode: updatedCode }: { roomCode: string }) => {
-      if (updatedCode === roomCode) fetchRoom();
-    };
-
-    festivalChannel.bind("room-update", handleRoomUpdate);
+    festivalChannel.bind("night-update", onNightUpdate);
 
     return () => {
-      festivalChannel.unbind("room-update", handleRoomUpdate);
-      document.removeEventListener("visibilitychange", handleVisibility);
+      festivalChannel.unbind("room-update", onRoomUpdate);
+      festivalChannel.unbind("night-update", onNightUpdate);
+      document.removeEventListener("visibilitychange", onVisibility);
       if (pollingRef.current) clearInterval(pollingRef.current);
     };
   }, [userToken, roomCode]);
@@ -96,14 +89,25 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
   if (!userToken) return <p>Caricamento...</p>;
   if (!room) return <p>Caricamento stanza...</p>;
 
-  const currentUser = room.users.find((u) => u.userToken === userToken);
+  const users = membersToUsers(room.members);
+
+  const currentMember = room.members.find((m) => m.userToken === userToken);
+  const currentUser: User | undefined = currentMember
+    ? {
+        id: currentMember.id,
+        profile_id: currentMember.profile_id,
+        username: currentMember.profile.username,
+        isHost: currentMember.isHost,
+        userToken: currentMember.userToken,
+      }
+    : undefined;
 
   return (
     <div style={{ height: "100dvh", display: "flex", flexDirection: "column", overflow: "hidden" }}>
-      <div ref={topRef} style={{ flexShrink: 0 }}>
-        <Header isRoom usersCount={room.users.length} festivalType={festivalType} />
+      <div style={{ flexShrink: 0 }}>
+        <Header isRoom usersCount={room.members.length} festivalType={festivalType} />
 
-        <div style={{ padding: "0 0px", marginBottom: 2 }}>
+        <div style={{ marginBottom: 2 }}>
           <CurrentEvent
             festivalType={festivalType}
             songId={currentSongId}
@@ -111,25 +115,29 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
             userToken={userToken}
             onCommentSent={() => setHasCommented(true)}
             hasCommented={hasCommented}
-            users={room.users}
+            users={users}
             votes={currentVotes}
             currentUser={currentUser}
             hasVoted={hasVoted}
           />
         </div>
 
-        <SongList roomCode={roomCode} currentSongId={currentSongId} />
+        <SongList roomCode={roomCode} currentSongId={currentSongId} night={currentNight} />
 
-        <div className="flex items-center gap-3 my-4 overflow-x-auto" style={{ scrollbarWidth: "none", paddingLeft: 0, paddingRight: 0 }}>
+        {/* Barra utenti */}
+        <div
+          className="flex items-center gap-3 my-4 overflow-x-auto"
+          style={{ scrollbarWidth: "none" }}
+        >
           <span className="text-stone-600 text-xs font-bold bg-stone-900 px-2.5 py-1 rounded-full flex-shrink-0">
             <span className="text-stone-600 text-xs font-normal mr-0.5">Stanza:</span>
             <span>{room.code}</span>
           </span>
           <div className="w-px h-3 bg-stone-800 flex-shrink-0" />
           <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: "none" }}>
-            {room.users.map((u) => {
+            {users.map((u) => {
               const isMe = u.userToken === userToken;
-              const hasVotedU = votedUserIds.includes(u.id);
+              const hasVotedU = votedProfileIds.includes(u.profile_id);
               return (
                 <div
                   key={u.id}
@@ -142,9 +150,7 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
                   <span
                     className="w-1.5 h-1.5 rounded-full flex-shrink-0"
                     style={{
-                      background: hasVotedU
-                        ? "rgb(134,239,172)"
-                        : isMe ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
+                      background: hasVotedU ? "rgb(134,239,172)" : isMe ? "rgba(255,255,255,0.3)" : "rgba(255,255,255,0.1)",
                     }}
                   />
                   <span className={isMe ? "text-white font-bold" : "text-stone-400"}>{u.username}</span>
@@ -160,9 +166,9 @@ export default function RoomClient({ roomCode }: { roomCode: string }) {
         <InteractBox
           roomCode={room.code}
           currentUser={currentUser}
-          users={room.users}
+          users={users}
           userToken={userToken}
-          onVotedUsersChange={setVotedUserIds}
+          onVotedUsersChange={setVotedProfileIds}
           onShowResults={setShowResults}
           onFestivalTypeChange={(type) => setFestivalType(type as StatusType)}
           onSongIdChange={setCurrentSongId}

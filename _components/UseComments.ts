@@ -1,5 +1,5 @@
 "use client";
-// useComments.ts — gestisce fetch e aggiornamento commenti durante l'esibizione
+// useComments.ts
 import { useState, useEffect, useRef, useCallback } from "react";
 import { festivalChannel } from "@/_lib/pusherClient";
 import type { Comment, User } from "./types";
@@ -15,17 +15,24 @@ export function useComments({ songId, roomCode, isEsibizione, users }: UseCommen
   const [chatComments, setChatComments] = useState<Comment[]>([]);
   const shownIds = useRef<Set<number>>(new Set());
 
-  const addToChat = useCallback((comment: Comment) => {
-    if (shownIds.current.has(comment.id)) return;
-    shownIds.current.add(comment.id);
-    setChatComments((prev) => [...prev, comment]);
-  }, []);
+  // Normalizza un commento che può avere sia `user` (vecchio schema) che `profile` (nuovo schema)
+  const normalizeComment = useCallback((c: any): Comment => ({
+    ...c,
+    user: c.user ?? (c.profile ? { id: c.profile_id, username: c.profile.username } : { id: 0, username: "?" }),
+  }), []);
+
+  const addToChat = useCallback((comment: any) => {
+    const normalized = normalizeComment(comment);
+    if (shownIds.current.has(normalized.id)) return;
+    shownIds.current.add(normalized.id);
+    setChatComments((prev) => [...prev, normalized]);
+  }, [normalizeComment]);
 
   const fetchComments = useCallback(async (id: number) => {
     try {
       const res = await fetch(`/api/get-comments?songId=${id}&roomCode=${roomCode}`);
       if (!res.ok) return;
-      const data: Comment[] = await res.json();
+      const data: any[] = await res.json();
       data.forEach((c) => addToChat(c));
     } catch {}
   }, [roomCode, addToChat]);
@@ -40,24 +47,20 @@ export function useComments({ songId, roomCode, isEsibizione, users }: UseCommen
   useEffect(() => {
     if (!isEsibizione || !songId) return;
     fetchComments(songId);
-
     const onCommentUpdate = ({ songId: sid }: { songId: number }) => {
       if (sid !== songId) return;
       (async () => {
         try {
           const res = await fetch(`/api/get-comments?songId=${sid}&roomCode=${roomCode}`);
           if (!res.ok) return;
-          const data: Comment[] = await res.json();
+          const data: any[] = await res.json();
           const newest = data[data.length - 1];
           if (newest) addToChat(newest);
         } catch {}
       })();
     };
-
     festivalChannel.bind("comment-update", onCommentUpdate);
-    return () => {
-      festivalChannel.unbind("comment-update", onCommentUpdate);
-    };
+    return () => { festivalChannel.unbind("comment-update", onCommentUpdate); };
   }, [isEsibizione, songId]);
 
   return { chatComments };

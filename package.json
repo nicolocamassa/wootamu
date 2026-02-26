@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "db:reset": "prisma db push --force-reset"
+    "db:reset": "npx prisma db push --force-reset --accept-data-loss --skip-generate"
   },
   "dependencies": {
     "@prisma/adapter-mariadb": "^7.4.0",

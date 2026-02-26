@@ -1,3 +1,4 @@
+// /api/room-leaderboard/route.ts
 import { prisma } from "@/_lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
@@ -9,17 +10,19 @@ export async function GET(req: NextRequest) {
     const room = await prisma.room.findUnique({ where: { code: roomCode } });
     if (!room) return NextResponse.json([], { status: 404 });
 
-    // Tutti i voti degli utenti di questa stanza, con la canzone
+    const currentNight = room.night ?? null;
+
     const votes = await prisma.vote.findMany({
       where: {
         user: { room_id: room.id },
+        // Filtra per serata corrente — se night è null prende tutto (retrocompatibilità)
+        ...(currentNight !== null ? { night: currentNight } : {}),
       },
       include: {
         song: { select: { id: true, title: true, artist: true } },
       },
     });
 
-    // Raggruppa per canzone
     const songMap = new Map<
       number,
       { id: number; title: string; artist: string; values: number[] }

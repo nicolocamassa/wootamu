@@ -7,6 +7,7 @@ type Song = {
   id: number;
   title: string;
   artist: string;
+  night?: number | null;
   image_url?: string;
   image_url_nobg?: string;
   performance_time?: string | null;
@@ -88,6 +89,7 @@ export default function FestivalControlPage() {
   const [title, setTitle] = useState("");
   const [artist, setArtist] = useState("");
   const [artistCanonical, setArtistCanonical] = useState("");
+  const [songNight, setSongNight] = useState<number | "">("");
   const [performanceTime, setPerformanceTime] = useState("");
   const [imageUrl, setImageUrl] = useState("");
   const [imageUrlNobg, setImageUrlNobg] = useState("");
@@ -184,7 +186,7 @@ export default function FestivalControlPage() {
   }, [showToast]);
 
   const getNextSong = useCallback((): Song | null => {
-    const list = songsRef.current;
+    const list = songsRef.current.filter((s) => activeNight === null || s.night === activeNight || s.night == null);
     if (!list.length) return null;
     const withTime = list
       .filter((s) => s.performance_time)
@@ -250,12 +252,13 @@ export default function FestivalControlPage() {
           title,
           artist,
           artistCanonical: artistCanonical || null,
+          night: songNight !== "" ? Number(songNight) : null,
           performanceTime,
           imageUrl: imageUrl || null,
           imageUrlNobg: imageUrlNobg || null,
         }),
       });
-      setTitle(""); setArtist(""); setArtistCanonical(""); setPerformanceTime(""); setImageUrl(""); setImageUrlNobg("");
+      setTitle(""); setArtist(""); setArtistCanonical(""); setSongNight(""); setPerformanceTime(""); setImageUrl(""); setImageUrlNobg("");
       await fetchSongs();
     } catch (error) {
       console.error("Errore aggiunta canzone", error);
@@ -268,7 +271,7 @@ export default function FestivalControlPage() {
     try {
       const text = await file.text();
       const parsed = JSON.parse(text);
-      const songsToImport: { title: string; artist: string; artist_canonical?: string; performance_time?: string; image_url?: string; image_url_nobg?: string; }[] =
+      const songsToImport: { title: string; artist: string; artist_canonical?: string; night?: number; performance_time?: string; image_url?: string; image_url_nobg?: string; }[] =
         Array.isArray(parsed) ? parsed : parsed.songs;
       if (!Array.isArray(songsToImport)) { setImportStatus("❌ Formato JSON non valido."); return; }
       setImportStatus(`⏳ Importazione di ${songsToImport.length} canzoni...`);
@@ -282,6 +285,7 @@ export default function FestivalControlPage() {
             title: song.title,
             artist: song.artist,
             artistCanonical: song.artist_canonical ?? null,
+            night: song.night ?? null,
             performanceTime: song.performance_time ?? null,
             imageUrl: song.image_url ?? null,
             imageUrlNobg: song.image_url_nobg ?? null,
@@ -424,6 +428,19 @@ export default function FestivalControlPage() {
             L'artista canonico serve a collegare questa canzone alle versioni in serate diverse (es. duetti).
             Lascia vuoto se non serve.
           </p>
+          <select
+            value={songNight}
+            onChange={(e) => setSongNight(e.target.value !== "" ? Number(e.target.value) : "")}
+            className="adm-input"
+            style={{ backgroundColor: "#1a1a24", color: songNight !== "" ? "#ededed" : "rgba(255,255,255,0.2)" }}
+          >
+            <option value="" style={{ background: "#1a1a24" }}>-- Serata (opzionale) --</option>
+            {[1,2,3,4,5].map((n) => (
+              <option key={n} value={n} style={{ background: "#1a1a24" }}>
+                {n}ª serata
+              </option>
+            ))}
+          </select>
           <input className="adm-input" type="datetime-local" value={performanceTime} onChange={(e) => setPerformanceTime(e.target.value)} />
           <input className="adm-input" type="url" placeholder="URL immagine artista (opzionale)" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} />
           <input className="adm-input" type="url" placeholder="URL immagine senza sfondo (opzionale)" value={imageUrlNobg} onChange={(e) => setImageUrlNobg(e.target.value)} />
@@ -432,7 +449,7 @@ export default function FestivalControlPage() {
           <hr className="adm-divider" />
           <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Importa da file JSON:</p>
           <p style={{ fontSize: 11, color: "rgba(255,255,255,0.18)", marginBottom: 10, fontFamily: "monospace" }}>
-            {"[{ title, artist, artist_canonical?, performance_time?, image_url?, image_url_nobg? }]"}
+            {"[{ title, artist, artist_canonical?, night?, performance_time?, image_url?, image_url_nobg? }]"}
           </p>
           <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportJSON} style={{ display: "none" }} />
           <button onClick={() => fileInputRef.current?.click()} className="adm-btn adm-btn-gray">📂 Carica file JSON</button>
@@ -482,12 +499,14 @@ export default function FestivalControlPage() {
             style={{ marginBottom: 12, backgroundColor: "#1a1a24", color: "#ededed" }}
           >
             <option value="" style={{ background: "#1a1a24" }}>-- Seleziona canzone --</option>
-            {songs.map((s) => (
-              <option key={s.id} value={s.id} style={{ background: "#1a1a24" }}>
-                {s.artist} – {s.title}
-                {s.performance_time ? ` (${new Date(s.performance_time).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })})` : ""}
-              </option>
-            ))}
+            {songs
+              .filter((s) => activeNight === null || s.night === activeNight || s.night == null)
+              .map((s) => (
+                <option key={s.id} value={s.id} style={{ background: "#1a1a24" }}>
+                  {s.artist} – {s.title}
+                  {s.performance_time ? ` (${new Date(s.performance_time).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })})` : ""}
+                </option>
+              ))}
           </select>
           <button onClick={() => {
             const sid = songId;
@@ -596,6 +615,20 @@ export default function FestivalControlPage() {
               Nessun risultato trovato per "{roomCode}"
             </p>
           )}
+        </div>
+
+        {/* ── Esporta voti ── */}
+        <div className="adm-card">
+          <div className="adm-section-title">📥 Esporta voti</div>
+          <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 12 }}>
+            Scarica i voti di <strong style={{ color: "rgba(255,255,255,0.5)" }}>Nicolino</strong>, <strong style={{ color: "rgba(255,255,255,0.5)" }}>Manuè</strong> e <strong style={{ color: "rgba(255,255,255,0.5)" }}>Mieru a culuni</strong>, divisi per serata.
+          </p>
+          <button
+            onClick={() => window.open("/api/export-votes", "_blank")}
+            className="adm-btn adm-btn-blue"
+          >
+            <span>📥 Scarica voti.txt</span>
+          </button>
         </div>
       </div>
 

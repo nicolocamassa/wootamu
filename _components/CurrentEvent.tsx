@@ -24,7 +24,7 @@ type PusherNotification = {
   text: string;
   type: MessageType;
   voteValue?: number;
-  voterProfileId?: number;
+  voterProfileId?: number; // prima era voterUserId
 };
 type RoomStats = {
   averageTotal: number | null;
@@ -115,14 +115,9 @@ export default function CurrentEvent({
   const roomCodeRef = useRef(roomCode);
   const currentUserProfileIdRef = useRef(currentUser?.profile_id);
   const onUserJoinedRef = useRef(onUserJoined);
-  // Ref persistente: una volta true non torna mai false finché non cambia canzone
-  const hasVotedEverRef = useRef(false);
 
   useEffect(() => { festivalTypeRef.current = festivalType; }, [festivalType]);
-  useEffect(() => {
-    hasVotedRef.current = hasVoted;
-    if (hasVoted) hasVotedEverRef.current = true;
-  }, [hasVoted]);
+  useEffect(() => { hasVotedRef.current = hasVoted; }, [hasVoted]);
   useEffect(() => { usersRef.current = users; }, [users]);
   useEffect(() => { roomCodeRef.current = roomCode; }, [roomCode]);
   useEffect(() => { currentUserProfileIdRef.current = currentUser?.profile_id; }, [currentUser?.profile_id]);
@@ -155,10 +150,10 @@ export default function CurrentEvent({
       if (data.type === "vote" && data.voterProfileId !== undefined) {
         const isMe = data.voterProfileId === currentUserProfileIdRef.current;
         if (isMe) return;
-        const showValue = festivalTypeRef.current !== "votazione" || hasVotedEverRef.current;
+        const showValue = festivalTypeRef.current !== "votazione" || hasVotedRef.current;
         const voterName = usersRef.current.find((u) => u.profile_id === data.voterProfileId)?.username ?? "Qualcuno";
         const displayText = showValue && data.voteValue !== undefined
-          ? `${voterName} ha dato: ${data.voteValue.toFixed(1)} ✅`
+          ? `${voterName} ha votato ${data.voteValue.toFixed(1)} ✅`
           : `${voterName} ha votato ✅`;
         enqueue(displayText, "vote");
         return;
@@ -186,8 +181,6 @@ export default function CurrentEvent({
     isShowingRef.current = false;
     if (timerRef.current) clearTimeout(timerRef.current);
     setPanelIndex(0);
-    // Reset hasVotedEver al cambio canzone
-    hasVotedEverRef.current = false;
   }, [songId]);
 
   // ─── Stats fetch ─────────────────────────────────────────────────────────
@@ -230,7 +223,7 @@ export default function CurrentEvent({
   };
 
   // ─── Comment submit ───────────────────────────────────────────────────────
-  const canComment = festivalType === "esibizione" && !!songId && !hasCommented;
+  const canComment = festivalType === "esibizione" && !!songId;
 
   const handleSubmit = async () => {
     if (!text.trim() || !canComment || !userToken) return;
@@ -243,7 +236,6 @@ export default function CurrentEvent({
       });
       if (!res.ok) throw new Error();
       setText("");
-      onCommentSent();
     } catch (err) { console.error(err); }
     finally { setLoading(false); }
   };
@@ -266,33 +258,27 @@ export default function CurrentEvent({
     >
       {festivalType === "esibizione" ? (
         <div style={{ width: "100%", display: "flex", alignItems: "center" }}>
-          {hasCommented ? (
-            <p style={{ fontSize: 12, color: "rgba(255,255,255,0.25)", textAlign: "center", margin: 0, width: "100%" }}>
-              Commento inviato — aspetta il prossimo artista
-            </p>
-          ) : (
-            <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
-              <input
-                type="text" maxLength={80} placeholder="Scrivi un commento…"
-                value={text} onChange={(e) => setText(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-                style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: "#ededed", fontFamily: "'Inter', sans-serif", caretColor: "#D4AF37" }}
-              />
-              <button
-                onClick={handleSubmit} disabled={!text.trim() || loading}
-                style={{
-                  flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
-                  width: 32, height: 32, borderRadius: 9, border: "none",
-                  cursor: text.trim() && !loading ? "pointer" : "not-allowed",
-                  background: text.trim() && !loading ? "#D4AF37" : "rgba(255,255,255,0.06)",
-                  color: text.trim() && !loading ? "#0F0F14" : "rgba(255,255,255,0.2)",
-                  transition: "background 0.2s, color 0.2s",
-                }}
-              >
-                <SendHorizonal size={13} />
-              </button>
-            </div>
-          )}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", width: "100%" }}>
+            <input
+              type="text" maxLength={80} placeholder="Scrivi un commento…"
+              value={text} onChange={(e) => setText(e.target.value)}
+              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
+              style={{ flex: 1, background: "transparent", border: "none", outline: "none", fontSize: 13, color: "#ededed", fontFamily: "'Inter', sans-serif", caretColor: "#D4AF37" }}
+            />
+            <button
+              onClick={handleSubmit} disabled={!text.trim() || loading}
+              style={{
+                flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center",
+                width: 32, height: 32, borderRadius: 9, border: "none",
+                cursor: text.trim() && !loading ? "pointer" : "not-allowed",
+                background: text.trim() && !loading ? "#D4AF37" : "rgba(255,255,255,0.06)",
+                color: text.trim() && !loading ? "#0F0F14" : "rgba(255,255,255,0.2)",
+                transition: "background 0.2s, color 0.2s",
+              }}
+            >
+              <SendHorizonal size={13} />
+            </button>
+          </div>
         </div>
       ) : (
         <div style={{ width: "100%", height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", position: "relative" }}>

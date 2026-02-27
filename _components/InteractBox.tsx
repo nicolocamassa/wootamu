@@ -103,7 +103,7 @@ export default function InteractBox({
   const [finalLeaderboard, setFinalLeaderboard] = useState<FinalEntry[]>([]);
   const [finalCountdown, setFinalCountdown] = useState<number | null>(null);
   const [showFinalLeaderboard, setShowFinalLeaderboard] = useState(false);
-  const [myVotes, setMyVotes] = useState<{ songId: number; value: number }[]>([]);
+  const [myVotes, setMyVotes] = useState<{ songId: number; value: number; night: number }[]>([]);
   const [allRoomVotes, setAllRoomVotes] = useState<{ profile_id: number; song_id: number; value: number }[]>([]);
   const [lbView, setLbView] = useState<"stanza" | "mia" | "affinita">("stanza");
   const [lbMode, setLbMode] = useState<"serata" | "cumulativa">("serata");
@@ -322,7 +322,27 @@ export default function InteractBox({
       );
     }
 
-    const myVotesMap = new Map<number, number>(myVotes.map((v) => [v.songId, v.value]));
+    const myVotesMap = (() => {
+      if (lbMode === "serata") {
+        // Solo i voti della serata corrente (night più alta votata)
+        const latestNight = Math.max(...myVotes.map((v) => v.night ?? 0));
+        const filtered = isFinite(latestNight) ? myVotes.filter((v) => v.night === latestNight) : myVotes;
+        return new Map<number, number>(filtered.map((v) => [v.songId, v.value]));
+      } else {
+        // Cumulativa: media dei voti per canzone su tutte le serate
+        const grouped = new Map<number, number[]>();
+        myVotes.forEach((v) => {
+          if (!grouped.has(v.songId)) grouped.set(v.songId, []);
+          grouped.get(v.songId)!.push(v.value);
+        });
+        return new Map<number, number>(
+          [...grouped.entries()].map(([songId, vals]) => [
+            songId,
+            vals.reduce((a, b) => a + b, 0) / vals.length,
+          ])
+        );
+      }
+    })();
     // Frecce: usano il campo `trend` direttamente dall'API cumulativa
     const activeBaseList = lbMode === "cumulativa" && cumulativeLeaderboard.length > 0 ? cumulativeLeaderboard : finalLeaderboard;
     const withVotes = activeBaseList.filter((s) => s.average !== null);

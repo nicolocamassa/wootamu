@@ -115,6 +115,7 @@ export default function FestivalControlPage() {
   const [imageUrl, setImageUrl] = useState("");
   const [imageUrlNobg, setImageUrlNobg] = useState("");
   const [importStatus, setImportStatus] = useState<string | null>(null);
+  const [clearNightBeforeImport, setClearNightBeforeImport] = useState<number | "">("");
   const [pendingProfiles, setPendingProfiles] = useState<PendingProfile[]>([]);
   const [leaderboard, setLeaderboard] = useState<SongResult[]>([]);
   const [lbLoading, setLbLoading] = useState(false);
@@ -150,8 +151,12 @@ export default function FestivalControlPage() {
 
   const selectedSong = songs.find((s) => s.id === songId);
 
-  const fetchSongs = async () => {
-    const res = await fetch("/api/songs");
+  const fetchSongs = async (n: number | null | undefined = activeNight) => {
+    // use /api/get-songs which knows how to return only the songs for a
+    // particular night (and includes performance_time/played flags). When
+    // `n` is undefined we fall back to fetching everything.
+    const url = n != null ? `/api/get-songs?night=${n}` : "/api/songs";
+    const res = await fetch(url);
     const data = await res.json();
     setSongs(data);
   };
@@ -220,6 +225,8 @@ export default function FestivalControlPage() {
       });
       setActiveNight(n);
       showToast(`🌙 Serata ${n} attivata`);
+      // rifetch delle canzoni in base alla serata appena cambiata
+      await fetchSongs(n);
     } catch {
       showToast("❌ Errore impostazione serata");
     }
@@ -315,6 +322,25 @@ export default function FestivalControlPage() {
       const parsed = JSON.parse(text);
       const songsToImport: any[] = Array.isArray(parsed) ? parsed : parsed.songs;
       if (!Array.isArray(songsToImport)) { setImportStatus("❌ Formato JSON non valido."); return; }
+      
+      // Se una serata è selezionata, elimina le canzoni di quella serata prima di importare
+      if (clearNightBeforeImport !== "") {
+        setImportStatus(`⏳ Eliminazione canzoni della serata ${clearNightBeforeImport}...`);
+        try {
+          const deleteRes = await fetch(`/api/delete-songs-by-night?night=${clearNightBeforeImport}`, {
+            method: "DELETE",
+          });
+          if (!deleteRes.ok) {
+            setImportStatus("❌ Errore eliminazione canzoni precedenti");
+            return;
+          }
+        } catch (err) {
+          console.error("Errore eliminazione:", err);
+          setImportStatus("❌ Errore eliminazione canzoni precedenti");
+          return;
+        }
+      }
+      
       setImportStatus(`⏳ Importazione di ${songsToImport.length} canzoni...`);
       let success = 0;
       for (const song of songsToImport) {
@@ -334,6 +360,7 @@ export default function FestivalControlPage() {
         if (res.ok) success++;
       }
       setImportStatus(`✅ Importate ${success} canzoni su ${songsToImport.length}`);
+      setClearNightBeforeImport("");
       await fetchSongs();
     } catch (err) {
       console.error(err);
@@ -592,6 +619,10 @@ export default function FestivalControlPage() {
           <hr className="adm-divider" />
           <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginBottom: 8 }}>Importa da file JSON:</p>
           <p style={{ fontSize: 11, color: "rgba(255,255,255,0.18)", marginBottom: 10, fontFamily: "monospace" }}>{"[{ title, artist, artist_canonical?, night?, performance_time?, image_url? }]"}</p>
+          <select value={clearNightBeforeImport} onChange={(e) => setClearNightBeforeImport(e.target.value !== "" ? Number(e.target.value) : "")} className="adm-input" style={{ backgroundColor: "#1a1a24", color: clearNightBeforeImport !== "" ? "#ededed" : "rgba(255,255,255,0.2)", marginBottom: 8 }}>
+            <option value="" style={{ background: "#1a1a24" }}>-- Pulisci serata (opzionale) --</option>
+            {[1,2,3,4,5].map((n) => <option key={n} value={n} style={{ background: "#1a1a24" }}>{n}ª serata</option>)}
+          </select>
           <input ref={fileInputRef} type="file" accept=".json" onChange={handleImportJSON} style={{ display: "none" }} />
           <button onClick={() => fileInputRef.current?.click()} className="adm-btn adm-btn-gray">📂 Carica file JSON</button>
           {importStatus && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.5)", marginTop: 8 }}>{importStatus}</p>}

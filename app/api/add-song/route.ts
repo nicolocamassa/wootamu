@@ -10,29 +10,34 @@ export async function POST(req: Request) {
 
     const nightNum = night ? Number(night) : null;
 
-    // Cerca canzone esistente — prima per artista esatto, poi per canonical
+    // Cerca canzone esistente — prima per artista esatto.
     // MySQL collation è case-insensitive di default (utf8mb4_unicode_ci)
-    // quindi la query normale funziona già case-insensitive
+    // quindi la query normale funziona già case-insensitive.
+    //
+    // In passato veniva anche cercato solo per artist_canonical così da
+    // raggruppare tutte le performance dello stesso interprete, ma questo
+    // causava fusioni indesiderate quando caricavo duetti o cover con lo
+    // stesso canonical: il record originale veniva aggiornato e la nuova
+    // performance veniva attaccata a quel titolo, rendendo la canzone
+    // non selezionabile in admin. Ora facciamo match su canonical **solo
+    // se coincide anche il titolo**, preservando le entry distinte.
+    // In alternativa si cerca anche per titolo+canonical (ridondante, ma
+    // aiuta a chiarire l'intento).
+
     let existingSong = await prisma.song.findFirst({
       where: { artist: artist.trim() },
     });
 
-    // Se non trovato per artista, prova per canonical
-    if (!existingSong && artistCanonical) {
-      existingSong = await prisma.song.findFirst({
-        where: { artist_canonical: artistCanonical.trim() },
-      });
-    }
-
-    // Se non trovato per canonical, prova titolo + artista canonical
     if (!existingSong && artistCanonical) {
       existingSong = await prisma.song.findFirst({
         where: {
-          title: title.trim(),
           artist_canonical: artistCanonical.trim(),
+          title: title.trim(),
         },
       });
     }
+
+    // precedente logica (solo canonical) rimossa per evitare fusioni
 
     let song = existingSong;
 
@@ -47,11 +52,23 @@ export async function POST(req: Request) {
         },
       });
     } else {
-      // Aggiorna image_url se mancante
-      if (imageUrl && !song.image_url) {
+      // Se la canzone esiste già, potremmo avere nuovi metadati nel JSON
+      // (titolo/artist/artist_canonical). Aggiorniamo il record se differisce
+      // per riflettere lo stato più recente, altrimenti le performance avranno
+      // orari corretti ma descrizioni sbagliate come segnalato dall'utente.
+      const updates: Record<string, any> = {};
+      const t = title.trim();
+      const a = artist.trim();
+      const ac = artistCanonical?.trim() ?? null;
+      if (song.title !== t) updates.title = t;
+      if (song.artist !== a) updates.artist = a;
+      if (ac !== null && song.artist_canonical !== ac) updates.artist_canonical = ac;
+      if (imageUrl && !song.image_url) updates.image_url = imageUrl;
+
+      if (Object.keys(updates).length > 0) {
         song = await prisma.song.update({
           where: { id: song.id },
-          data: { image_url: imageUrl },
+          data: updates,
         });
       }
     }

@@ -402,6 +402,8 @@ export default function InteractBox({
     const hasCompat = roomCompat !== null || personCompats.length > 0;
 
     console.log("myVotesMap", [...myVotesMap.entries()]);
+    console.log("finalLeaderboard ids:", finalLeaderboard.map(s => s.id));
+console.log("cumulativeLeaderboard ids:", cumulativeLeaderboard.map(s => s.id));
 console.log("myVotes raw", myVotes);
 
     return (

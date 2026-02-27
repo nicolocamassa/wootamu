@@ -254,14 +254,19 @@ export default function InteractBox({
       } catch {}
     };
     const fetchMyVotesFn = async () => {
-      if (!userToken) return;
-      try {
-        const res = await fetch(`/api/get-my-votes?roomCode=${roomCode}`, {
-          headers: { Authorization: `Bearer ${userToken}` },
-        });
-        if (res.ok) setMyVotes(await res.json());
-      } catch {}
-    };
+  const token = userToken ?? localStorage.getItem("userToken");
+  if (!token) return;
+  try {
+    const res = await fetch(`/api/get-my-votes`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (res.ok) {
+      const data = await res.json();
+      console.log("myVotes fetched:", data.length, data[0]);
+      setMyVotes(data);
+    }
+  } catch {}
+};
     const fetchAllVotes = async () => {
       try {
         const res = await fetch(`/api/get-all-votes?roomCode=${roomCode}`);
@@ -395,6 +400,9 @@ export default function InteractBox({
     }).filter(Boolean).sort((a, b) => b!.pct - a!.pct) as { user: User; pct: number; songs: number }[];
 
     const hasCompat = roomCompat !== null || personCompats.length > 0;
+
+    console.log("myVotesMap", [...myVotesMap.entries()]);
+console.log("myVotes raw", myVotes);
 
     return (
       <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "16px 14px 14px" }}>

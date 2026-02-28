@@ -61,6 +61,8 @@ export type FestivalStatus = {
   hasVoted?: boolean;
   eventIndex?: number;
   classificaIndex?: number;
+  aiTesto: string | null;
+  aiCommentoAt: string | null;
 };
 export type VotePhase = "idle" | "submitting" | "done";
 export type Room = {

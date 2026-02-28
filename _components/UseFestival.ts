@@ -101,16 +101,18 @@ export function useFestival(roomCode: string, userToken?: string | null) {
     const onStatusUpdate = (data: FestivalStatus) => {
       setStatus((prev) => {
         const next: FestivalStatus = {
-          ...(prev ?? data),
-          type: data.type,
-          songId: data.songId,
-          lastSongId: (data as any).lastSongId,
-          song: data.song
-            ? { ...data.song, votes: prev?.song?.votes ?? [] }
-            : prev?.song ?? null,
-          eventIndex: (data as any).eventIndex ?? prev?.eventIndex ?? 0,
-          classificaIndex: (data as any).classificaIndex ?? 0,
-        };
+  ...(prev ?? data),
+  type: data.type,
+  songId: data.songId,
+  lastSongId: (data as any).lastSongId,
+  song: data.song
+    ? { ...data.song, votes: prev?.song?.votes ?? [] }
+    : prev?.song ?? null,
+  eventIndex: (data as any).eventIndex ?? prev?.eventIndex ?? 0,
+  classificaIndex: (data as any).classificaIndex ?? 0,
+  aiTesto: (data as any).aiTesto ?? prev?.aiTesto ?? null,           // ← aggiungi
+  aiCommentoAt: (data as any).aiCommentoAt ?? prev?.aiCommentoAt ?? null, // ← aggiungi
+};
         statusRef.current = next;
         return next;
       });

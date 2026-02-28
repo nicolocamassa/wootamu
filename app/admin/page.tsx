@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef, useCallback } from "react";
+import { SERATA_TIMELINE, TimelineEvent } from "@/_lib/timeline";
 
 type StatusType = "attesa" | "presentazione" | "esibizione" | "votazione" | "spot" | "pausa" | "classifica" | "fine";
 
@@ -122,8 +123,12 @@ export default function FestivalControlPage() {
   const [roomCode, setRoomCode] = useState<string>("");
   const [toast, setToast] = useState<{ text: string; out: boolean } | null>(null);
   const [activeNight, setActiveNight] = useState<number | null>(null);
+  const [eventIndex, setEventIndex] = useState(0);
+  const [statusType, setStatusType] = useState<StatusType>("attesa");
+  const [classificaIndex, setClassificaIndex] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const toastTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const nextEventToApplyRef = useRef<number | null>(null);
 
   const songsRef = useRef<Song[]>([]);
   const songIdRef = useRef<number | "">("");
@@ -161,6 +166,205 @@ export default function FestivalControlPage() {
     setSongs(data);
   };
 
+  const fetchEventIndex = async () => {
+    try {
+      const res = await fetch("/api/festival-status");
+      if (!res.ok) return;
+      const data = await res.json();
+      setEventIndex(data.eventIndex ?? 0);
+      setStatusType(data.type);
+      setClassificaIndex(data.classificaIndex ?? 0);
+    } catch (error) {
+      console.error("Errore caricamento evento:", error);
+    }
+  };
+
+  useEffect(() => {
+    fetchSongs();
+    fetchPending();
+    fetchEventIndex();
+    const interval = setInterval(fetchPending, 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const showToast = useCallback((text: string) => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ text, out: false });
+    toastTimerRef.current = setTimeout(() => {
+      setToast((t) => t ? { ...t, out: true } : null);
+      setTimeout(() => setToast(null), 350);
+    }, 2200);
+  }, []);
+
+  const updateStatus = useCallback(async (type: StatusType, overrideSongId?: number | "", eventIndex?: number, classIndex?: number) => {
+    setLoading(true);
+    const sid = overrideSongId !== undefined ? overrideSongId : songIdRef.current;
+    try {
+      const body: any = {
+        type,
+        songId: type === "esibizione" || type === "votazione" ? sid : null,
+      };
+      if (typeof eventIndex === "number") body.eventIndex = eventIndex;
+      if (typeof classIndex === "number") {
+        body.classificaIndex = classIndex;
+      } else if (type === "classifica") {
+        // when switching into classifica without explicit index, reset on server
+        body.classificaIndex = 0;
+      }
+      console.log("[admin] updateStatus body", body);
+      await fetch("/api/festival-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      // update local UI state immediately
+      setStatusType(type);
+      if (typeof classIndex === "number") {
+        setClassificaIndex(classIndex);
+      }
+      // entering classifica mode should reset to start if no explicit index given
+      if (type === "classifica" && typeof classIndex !== "number") {
+        setClassificaIndex(0);
+      }
+      if (type !== "classifica") {
+        setClassificaIndex(0);
+      }
+    } catch (error) {
+      console.error("Errore aggiornamento stato", error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const updateEventIndex = useCallback(async (idx: number) => {
+    if (idx < 0 || idx >= SERATA_TIMELINE.length) return;
+    try {
+      const currentEvent = SERATA_TIMELINE[eventIndex];
+      const newEvent = SERATA_TIMELINE[idx];
+      
+      // Se stiamo navigando da un'esibizione a un'altra esibizione,
+      // prima inseriamo uno step di votazione
+      if (
+        currentEvent?.type === "esibizione" &&
+        newEvent?.type === "esibizione" &&
+        idx !== eventIndex
+      ) {
+        // Se non siamo già in votazione, cambia a votazione e salva il prossimo evento
+        const res = await fetch("/api/festival-status");
+        const status = await res.json();
+        
+        if (status.type !== "votazione") {
+          // Metti in votazione la canzone attuale
+          updateStatus("votazione", songIdRef.current);
+          // Salva l'indice che vuoi applicare dopo
+          nextEventToApplyRef.current = idx;
+          showToast(`🗳 Vota prima! Poi avanzi a ${newEvent.label}`);
+          return; // Non cambiare ancora l'evento indice
+        }
+      }
+      
+      // Se c'è un evento in sospeso da applicare, applicalo adesso
+      if (nextEventToApplyRef.current !== null) {
+        idx = nextEventToApplyRef.current;
+        nextEventToApplyRef.current = null;
+      }
+      
+      const event = SERATA_TIMELINE[idx];
+      
+      // Mappa il tipo di evento al tipo di status della festa
+      let statusType: StatusType = "attesa";
+      const eventType = (event as any).type;
+      switch (eventType) {
+        case "ospite":
+        case "presentazione":
+        case "momento_speciale":
+        case "collegamento":
+        case "premio":
+          statusType = "presentazione";
+          break;
+        case "esibizione":
+          statusType = "esibizione";
+          break;
+        case "spot":
+          statusType = "spot";
+          break;
+        case "stop_televoto":
+          statusType = "attesa";
+          break;
+        case "classifica_finale":
+          statusType = "classifica";
+          break;
+        default:
+          statusType = "attesa";
+      }
+
+      // Aggiorna il tipo di status della festa (e la canzone + eventIndex, se presenti)
+      // se l'evento è un'esibizione, proviamo a determinare automaticamente la
+      // canzone corretta. la timeline può contenere un songId esplicito ma
+      // in caso contrario utilizziamo la logica "next song" già presente
+      // nell'app (doNext/getNextSong) per auto-selezionare la performance.
+      let overrideSongId: number | undefined;
+      if (event.type === "esibizione") {
+        if ((event as any).songId !== undefined) {
+          overrideSongId = (event as any).songId;
+        } else {
+          // calcola canzone successiva come fa doNext
+          const list = songsRef.current.filter((s) => activeNight === null || s.night === activeNight || s.night == null);
+          if (list.length > 0) {
+            const withTime = list
+              .filter((s) => s.performance_time)
+              .sort((a, b) => new Date(a.performance_time!).getTime() - new Date(b.performance_time!).getTime());
+            let candidate: Song | null = null;
+            if (withTime.length > 0) {
+              const currentId = songIdRef.current;
+              if (currentId) {
+                const idxSong = withTime.findIndex((s) => s.id === currentId);
+                if (idxSong >= 0 && idxSong + 1 < withTime.length) candidate = withTime[idxSong + 1];
+              }
+              if (!candidate) {
+                const now = new Date();
+                candidate = withTime.find((s) => new Date(s.performance_time!) >= now) ?? withTime[0];
+              }
+            }
+            if (!candidate && songIdRef.current) {
+              const idxSong = list.findIndex((s) => s.id === songIdRef.current);
+              if (idxSong >= 0 && idxSong + 1 < list.length) candidate = list[idxSong + 1];
+            }
+            if (!candidate) candidate = list[0];
+            overrideSongId = candidate?.id;
+          }
+        }
+      }
+      // debug log to trace what we're about to send
+      console.log("[admin] updating eventIndex", idx, "event", event, "overrideSongId", overrideSongId);
+      // if we picked a song from the timeline, make sure it actually exists in
+      // our current song list; otherwise the server will ignore it and the
+      // interact box will stay on whatever was selected previously.
+      if (overrideSongId != null && !songsRef.current.find((s) => s.id === overrideSongId)) {
+        console.warn("[admin] timeline songId not present in song list", overrideSongId);
+        showToast("⚠️ Canzone evento non trovata, aggiungila prima");
+        // clear it so updateStatus doesn't send the bogus id
+        overrideSongId = undefined;
+      }
+
+      updateStatus(statusType, overrideSongId, idx, statusType === "classifica" ? 0 : undefined);
+      // sincronizziamo anche lo stato del picker in admin
+      if (overrideSongId !== undefined) {
+        setSongId(overrideSongId ?? "");
+      }
+
+      setEventIndex(idx);
+      setStatusType(statusType);
+      // reset classifica index when we leave classifica event
+      if (statusType !== "classifica") setClassificaIndex(0);
+      showToast(`⏱ ${event.time} — ${event.label}`);
+    } catch (error) {
+      console.error("Errore aggiornamento evento:", error);
+      showToast("❌ Errore aggiornamento evento");
+    }
+  }, [showToast, activeNight, eventIndex, updateStatus]);
+
   const fetchPending = async () => {
     const res = await fetch("/api/pending-profiles");
     const data = await res.json();
@@ -180,41 +384,6 @@ export default function FestivalControlPage() {
       setLbLoading(false);
     }
   };
-
-  useEffect(() => {
-    fetchSongs();
-    fetchPending();
-    const interval = setInterval(fetchPending, 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  const showToast = useCallback((text: string) => {
-    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
-    setToast({ text, out: false });
-    toastTimerRef.current = setTimeout(() => {
-      setToast((t) => t ? { ...t, out: true } : null);
-      setTimeout(() => setToast(null), 350);
-    }, 2200);
-  }, []);
-
-  const updateStatus = useCallback(async (type: StatusType, overrideSongId?: number | "") => {
-    setLoading(true);
-    const sid = overrideSongId !== undefined ? overrideSongId : songIdRef.current;
-    try {
-      await fetch("/api/festival-status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          type,
-          songId: type === "esibizione" || type === "votazione" ? sid : null,
-        }),
-      });
-    } catch (error) {
-      console.error("Errore aggiornamento stato", error);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
 
   const setNight = useCallback(async (n: number) => {
     try {
@@ -285,6 +454,7 @@ export default function FestivalControlPage() {
       if (key === "4") { updateStatus("attesa"); showToast("⏳ In attesa"); return; }
       if (key === "5") { updateStatus("classifica"); showToast("🏆 Classifica finale"); return; }
       if (key === "6") { updateStatus("fine"); showToast("🏁 Fine serata"); return; }
+      
     };
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
@@ -429,6 +599,31 @@ export default function FestivalControlPage() {
               </button>
             ))}
           </div>
+          {statusType === "classifica" && (
+            <div style={{ display: "flex", gap: 6, marginBottom: 8 }}>
+              <button
+                onClick={() => {
+                  const next = classificaIndex + 1;
+                  updateStatus("classifica", undefined, undefined, next);
+                  setClassificaIndex(next);
+                  showToast("Avanza classifica");
+                }}
+                className="adm-btn adm-btn-green"
+              >➜ Avanza</button>
+              
+              <button
+                onClick={() => {
+                  updateStatus("classifica", undefined, undefined, 0);
+                  setClassificaIndex(0);
+                  showToast("Reset classifica");
+                }}
+                className="adm-btn adm-btn-purple"
+              >🔄 Reset</button>
+              <div style={{ alignSelf: "center", fontSize: 12, color: "rgba(255,255,255,0.35)" }}>
+                {classificaIndex + 1}
+              </div>
+            </div>
+          )}
 
           <hr className="adm-divider" />
 
@@ -560,6 +755,99 @@ export default function FestivalControlPage() {
           </button>
 
           {loading && <p style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", marginTop: 10 }}>Aggiornamento in corso…</p>}
+        </div>
+
+        {/* ── TIMELINE EVENTO ── */}
+        <div className="adm-card" style={{ borderColor: "rgba(212,175,55,0.2)" }}>
+          <div className="adm-section-title" style={{ color: "#D4AF37" }}>⏱ Timeline Evento</div>
+          
+          {SERATA_TIMELINE.length > 0 && (
+            <>
+              {/* Evento attuale */}
+              {eventIndex < SERATA_TIMELINE.length && (
+                <div style={{ background: "rgba(212,175,55,0.08)", border: "1px solid rgba(212,175,55,0.25)", borderRadius: 12, padding: 14, marginBottom: 12 }}>
+                  <div style={{ fontSize: 10, color: "#D4AF37", letterSpacing: "0.07em", textTransform: "uppercase", marginBottom: 6 }}>Evento attuale</div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: "#ededed", marginBottom: 4 }}>
+                    {SERATA_TIMELINE[eventIndex].time} — {SERATA_TIMELINE[eventIndex].label}
+                  </div>
+                  {(SERATA_TIMELINE[eventIndex] as any).description && (
+                    <div style={{ fontSize: 11, color: "rgba(255,255,255,0.35)" }}>
+                      {(SERATA_TIMELINE[eventIndex] as any).description}
+                    </div>
+                  )}
+                  {(SERATA_TIMELINE[eventIndex] as any).guest && (
+                    <div style={{ fontSize: 11, color: "rgba(212,175,55,0.7)", marginTop: 8 }}>
+                      👤 {(SERATA_TIMELINE[eventIndex] as any).guest}
+                    </div>
+                  )}
+                  {(SERATA_TIMELINE[eventIndex] as any).presenter && (
+                    <div style={{ fontSize: 10, color: "rgba(255,255,255,0.35)", marginTop: 4 }}>
+                      con {(SERATA_TIMELINE[eventIndex] as any).presenter}
+                    </div>
+                  )}
+                  {(SERATA_TIMELINE[eventIndex] as any).coverTitle && (
+                    <div style={{ fontSize: 11, color: "rgba(134,239,172,0.8)", marginTop: 8, fontWeight: 600 }}>
+                      🎵 {(SERATA_TIMELINE[eventIndex] as any).coverTitle}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Scorrimento timeline */}
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }} suppressHydrationWarning>
+                <button
+                  onClick={() => updateEventIndex(Math.max(0, eventIndex - 1))}
+                  disabled={eventIndex <= 0}
+                  suppressHydrationWarning
+                  className="adm-btn"
+                  style={{
+                    padding: "10px 14px",
+                    marginBottom: 0,
+                    backgroundColor: eventIndex === 0 ? "rgba(255,255,255,0.05)" : "rgba(147,51,234,0.15)",
+                    color: eventIndex === 0 ? "rgba(255,255,255,0.2)" : "rgba(196,181,253,0.9)",
+                    border: `1px solid ${eventIndex === 0 ? "rgba(255,255,255,0.07)" : "rgba(147,51,234,0.2)"}`,
+                    cursor: eventIndex === 0 ? "not-allowed" : "pointer",
+                    flex: 1,
+                    justifyContent: "center",
+                  }}
+                >
+                  ← Indietro
+                </button>
+                <button
+                  onClick={() => updateEventIndex(Math.min(SERATA_TIMELINE.length - 1, eventIndex + 1))}
+                  disabled={eventIndex >= SERATA_TIMELINE.length - 1}
+                  suppressHydrationWarning
+                  className="adm-btn"
+                  style={{
+                    padding: "10px 14px",
+                    marginBottom: 0,
+                    backgroundColor: eventIndex === SERATA_TIMELINE.length - 1 ? "rgba(255,255,255,0.05)" : "rgba(34,197,94,0.15)",
+                    color: eventIndex === SERATA_TIMELINE.length - 1 ? "rgba(255,255,255,0.2)" : "rgba(134,239,172,0.9)",
+                    border: `1px solid ${eventIndex === SERATA_TIMELINE.length - 1 ? "rgba(255,255,255,0.07)" : "rgba(34,197,94,0.2)"}`,
+                    cursor: eventIndex === SERATA_TIMELINE.length - 1 ? "not-allowed" : "pointer",
+                    flex: 1,
+                    justifyContent: "center",
+                  }}
+                >
+                  Avanti →
+                </button>
+              </div>
+
+              {/* Indice evento */}
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 12px", fontSize: 12, color: "rgba(255,255,255,0.35)" }}>
+                <span>{eventIndex + 1} / {SERATA_TIMELINE.length}</span>
+                <input
+                  type="range"
+                  min="0"
+                  max={SERATA_TIMELINE.length - 1}
+                  value={eventIndex}
+                  onChange={(e) => updateEventIndex(Number(e.target.value))}
+                  className="ib-slider"
+                  style={{ flex: 1, margin: "0 12px", cursor: "pointer" }}
+                />
+              </div>
+            </>
+          )}
         </div>
 
         {/* ── Scorciatoie ── */}

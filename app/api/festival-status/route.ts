@@ -60,37 +60,116 @@ async function scheduleStats(roomCode: string) {
 
 export async function POST(req: Request) {
   try {
-    const { type, songId, roomCode } = await req.json();
-    if (!type) return NextResponse.json({ error: "Type obbligatorio" }, { status: 400 });
+    const body = await req.json();
+    console.log("[festival-status] POST body", body);
+    const { type, songId, roomCode, eventIndex, classificaIndex } = body;
+    if (!type) {
+      console.log("[festival-status] missing type in body", body);
+      return NextResponse.json({ error: "Type obbligatorio" }, { status: 400 });
+    }
 
     const currentNight = await getCurrentNight();
 
     // Aggiorna SongPerformance quando inizia esibizione o votazione
     if ((type === "esibizione" || type === "votazione") && songId) {
-      await prisma.songPerformance.upsert({
-        where: { song_id_night: { song_id: songId, night: currentNight } },
-        update: { performed: true, performance_time: new Date() },
-        create: { song_id: songId, night: currentNight, performed: true, performance_time: new Date() },
-      });
+      // assicurati che la canzone esista, altrimenti la upsert fallirà con vincolo FK
+      const songExists = await prisma.song.findUnique({ where: { id: songId } });
+      if (songExists) {
+        try {
+          await prisma.songPerformance.upsert({
+            where: { song_id_night: { song_id: songId, night: currentNight } },
+            update: { performed: true, performance_time: new Date() },
+            create: { song_id: songId, night: currentNight, performed: true, performance_time: new Date() },
+          });
+        } catch (err) {
+          console.error("[festival-status] failed to upsert songPerformance", err);
+        }
+      } else {
+        console.warn(`[festival-status] canzone con id ${songId} non trovata, salto aggiornamento performance`);
+      }
     }
 
     const current = await prisma.festivalStatus.findUnique({ where: { id: 1 } });
-    const lastSongId = songId ?? current?.lastSongId ?? current?.songId ?? null;
 
-    const updated = await prisma.festivalStatus.upsert({
-      where: { id: 1 },
-      update: { type, songId: songId ?? null, lastSongId },
-      create: { id: 1, type, songId: songId ?? null, lastSongId },
-      include: {
-        song: { include: { votes: { where: { night: currentNight } } } },
-        lastSong: { include: { votes: { where: { night: currentNight } } } },
-      },
-    });
+    // ensure songId is real before we put it in festivalStatus
+    let validSongId: number | null = null;
+    if (typeof songId === "number") {
+      const songCheck = await prisma.song.findUnique({ where: { id: songId } });
+      if (songCheck) {
+        validSongId = songId;
+      } else {
+        console.warn(`[festival-status] received invalid songId ${songId}, ignoring for status`);
+      }
+    }
+
+    const lastSongId = validSongId ?? current?.lastSongId ?? current?.songId ?? null;
+
+    const updateData: any = { type };
+    updateData.songId = validSongId;
+    updateData.lastSongId = lastSongId;
+    if (typeof eventIndex === "number") updateData.eventIndex = eventIndex;
+    if (typeof classificaIndex === "number") updateData.classificaIndex = classificaIndex;
+
+    // Try to upsert; if the Prisma client was not regenerated after schema change
+    // the `classificaIndex` field may cause an unknown-arg error. In that case
+    // retry excluding that field and attempt a raw SQL update as a fallback.
+    let updated: any = null;
+    let appliedClassifica = false;
+    try {
+      updated = await prisma.festivalStatus.upsert({
+        where: { id: 1 },
+        update: updateData,
+        create: { id: 1, type, songId: validSongId, lastSongId, eventIndex: typeof eventIndex === "number" ? eventIndex : 0, classificaIndex: typeof classificaIndex === "number" ? classificaIndex : 0 },
+        include: {
+          song: { include: { votes: { where: { night: currentNight } } } },
+          lastSong: { include: { votes: { where: { night: currentNight } } } },
+        },
+      });
+      appliedClassifica = typeof updated.classificaIndex === "number";
+    } catch (err) {
+      console.warn("[festival-status] upsert failed, retrying without classificaIndex", String(err));
+      // retry without classificaIndex in case Prisma client doesn't know the field
+      if (updateData.classificaIndex !== undefined) delete updateData.classificaIndex;
+      try {
+        updated = await prisma.festivalStatus.upsert({
+          where: { id: 1 },
+          update: updateData,
+          create: { id: 1, type, songId: validSongId, lastSongId, eventIndex: typeof eventIndex === "number" ? eventIndex : 0 },
+          include: {
+            song: { include: { votes: { where: { night: currentNight } } } },
+            lastSong: { include: { votes: { where: { night: currentNight } } } },
+          },
+        });
+      } catch (err2) {
+        console.error("[festival-status] upsert retry failed", err2);
+        throw err2; // rethrow to be handled by outer catch
+      }
+    }
+
+    // If caller asked to set classificaIndex but the upsert above didn't apply it
+    // (client/schema mismatch), attempt a direct SQL update as a fallback.
+    if (typeof classificaIndex === "number" && !appliedClassifica) {
+      try {
+        await prisma.$executeRaw`UPDATE festivalstatus SET classificaIndex = ${classificaIndex} WHERE id = 1`;
+        // refetch to reflect the change
+        updated = await prisma.festivalStatus.findUnique({
+          where: { id: 1 },
+          include: {
+            song: { include: { votes: { where: { night: currentNight } } } },
+            lastSong: { include: { votes: { where: { night: currentNight } } } },
+          },
+        });
+      } catch (err3) {
+        console.error("[festival-status] raw update classificaIndex failed", err3);
+      }
+    }
 
     await pusher.trigger("festival", "status-update", {
       ...updated,
-      song: updated.song ? { ...updated.song, votes: [] } : null,
-      lastSong: updated.lastSong ? { ...updated.lastSong, votes: [] } : null,
+      song: updated?.song ? { ...updated.song, votes: [] } : null,
+      lastSong: updated?.lastSong ? { ...updated.lastSong, votes: [] } : null,
+      eventIndex: updated?.eventIndex ?? 0,
+      classificaIndex: updated?.classificaIndex ?? classificaIndex ?? 0,
     });
 
     if (roomCode) {
@@ -130,8 +209,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json(updated);
   } catch (err) {
-    console.error(err);
-    return NextResponse.json({ error: "Errore aggiornamento stato" }, { status: 500 });
+    console.error("[festival-status] POST error", err);
+    return NextResponse.json({ error: "Errore aggiornamento stato", details: String(err) }, { status: 500 });
   }
 }
 
@@ -153,7 +232,7 @@ export async function GET(req: Request) {
 
     if (!status) {
       status = await prisma.festivalStatus.create({
-        data: { id: 1, type: "attesa", songId: null, lastSongId: null },
+        data: { id: 1, type: "attesa", songId: null, lastSongId: null, eventIndex: 0 },
         include: {
           song: { include: { votes: { where: { night: currentNight } } } },
           lastSong: { include: { votes: { where: { night: currentNight } } } },
@@ -183,7 +262,17 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json({ ...status, song: referenceSong, hasVoted });
+    return NextResponse.json({ 
+      id: status.id,
+      type: status.type,
+      songId: status.songId,
+      lastSongId: status.lastSongId,
+      eventIndex: status.eventIndex ?? 0,
+      classificaIndex: status.classificaIndex ?? 0,
+      updatedAt: status.updatedAt,
+      song: referenceSong, 
+      hasVoted 
+    });
   } catch (err) {
     console.error(err);
     return NextResponse.json({ error: "Errore fetch stato" }, { status: 500 });

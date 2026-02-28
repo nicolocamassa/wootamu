@@ -59,6 +59,8 @@ export type FestivalStatus = {
   song: Song | null;
   lastSong?: Song | null;
   hasVoted?: boolean;
+  eventIndex?: number;
+  classificaIndex?: number;
 };
 export type VotePhase = "idle" | "submitting" | "done";
 export type Room = {

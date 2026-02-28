@@ -2,7 +2,7 @@
 // InteractBox.tsx
 
 import React, { useState, useEffect, useRef, useCallback } from "react";
-import { Mic2, Tv, PauseCircle, Clock, Star, Trophy, Heart } from "lucide-react";
+import { Star, Trophy, Heart } from "lucide-react";
 
 import { useFestival } from "./UseFestival";
 import { useVoting } from "./UseVoting";
@@ -10,6 +10,8 @@ import { useComments } from "./UseComments";
 import { useReactions, REACTIONS } from "./UseReactions";
 import { Classifica } from "./Classifica";
 import { VotingBox } from "./VotingBox";
+import { statusScreenStyles, ScreenPresentazione, ScreenSpot, ScreenPausa, ScreenAttesa, ScreenFine } from "./StatusScreen";
+import { SERATA_TIMELINE } from "@/_lib/timeline";
 import type { User, UserRoom, Vote } from "./types";
 
 type InteractBoxProps = {
@@ -65,19 +67,384 @@ const styles = `
   @keyframes ib-bubble-in { from { opacity: 0; transform: translateY(6px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
   .ib-btn-danger { background: rgba(220,60,60,0.15); color: rgba(255,100,100,0.85); border: 1px solid rgba(220,60,60,0.25); cursor: pointer; }
   .ib-btn-danger:hover { background: rgba(220,60,60,0.22); }
+
+  @keyframes cl-reveal { from { opacity: 0; transform: translateY(18px) scale(0.97); } to { opacity: 1; transform: translateY(0) scale(1); } }
+  @keyframes cl-reveal-row { from { opacity: 0; transform: translateX(-8px); } to { opacity: 1; transform: translateX(0); } }
+  @keyframes cl-gold-glow { 0%,100% { text-shadow: 0 0 0 transparent; } 50% { text-shadow: 0 0 24px rgba(212,175,55,0.7), 0 0 48px rgba(212,175,55,0.3); } }
+  @keyframes cl-pop { 0% { transform: scale(0.6); opacity: 0; } 70% { transform: scale(1.12); opacity: 1; } 100% { transform: scale(1); } }
+  .cl-reveal-entry { animation: cl-reveal 0.55s cubic-bezier(0.16,1,0.3,1) both; }
+  .cl-reveal-row { animation: cl-reveal-row 0.4s ease both; }
+  .cl-gold-glow { animation: cl-gold-glow 2s ease-in-out infinite; }
+  .cl-pos-pop { animation: cl-pop 0.5s cubic-bezier(0.16,1,0.3,1) both; }
+
+  /* ── First Place: Burst rays ── */
+  @keyframes fp-ray-spin   { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+  @keyframes fp-ray-fadein { from { opacity: 0; transform: scaleY(0.2) rotate(var(--deg)); } to { opacity: 1; transform: scaleY(1) rotate(var(--deg)); } }
+
+  /* ── First Place: Number slam ── */
+  @keyframes fp-num-slam {
+    0%   { transform: scale(4) translateY(-20px); opacity: 0; filter: blur(12px); }
+    55%  { transform: scale(0.92) translateY(2px); opacity: 1; filter: blur(0); }
+    70%  { transform: scale(1.06); }
+    85%  { transform: scale(0.98); }
+    100% { transform: scale(1); }
+  }
+
+  /* ── First Place: Title reveal ── */
+  @keyframes fp-title-up {
+    from { opacity: 0; transform: translateY(22px) scale(0.95); filter: blur(4px); }
+    to   { opacity: 1; transform: translateY(0) scale(1); filter: blur(0); }
+  }
+
+  /* ── First Place: Score pop ── */
+  @keyframes fp-score-pop {
+    0%   { transform: scale(0); opacity: 0; }
+    65%  { transform: scale(1.18); opacity: 1; }
+    80%  { transform: scale(0.95); }
+    100% { transform: scale(1); }
+  }
+
+  /* ── First Place: Gold shimmer ── */
+  @keyframes fp-shimmer {
+    0%   { background-position: -200% center; }
+    100% { background-position: 200% center; }
+  }
+
+  /* ── First Place: Confetti ── */
+  @keyframes fp-conf {
+    0%   { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+    80%  { opacity: 0.8; }
+    100% { transform: translateY(var(--ty)) rotate(var(--rot)) scale(var(--sc)); opacity: 0; }
+  }
+
+  /* ── First Place: Glow pulse ── */
+  @keyframes fp-glow-pulse {
+    0%,100% { opacity: 0.35; transform: scale(1); }
+    50%     { opacity: 0.65; transform: scale(1.04); }
+  }
+
+  /* ── First Place: Medal drop ── */
+  @keyframes fp-medal-drop {
+    0%   { transform: translateY(-60px) rotate(-30deg) scale(0.4); opacity: 0; }
+    60%  { transform: translateY(4px) rotate(8deg) scale(1.15); opacity: 1; }
+    75%  { transform: translateY(-3px) rotate(-4deg) scale(0.98); }
+    100% { transform: translateY(0) rotate(0deg) scale(1); opacity: 1; }
+  }
+
+  /* ── First Place: Particles ── */
+  @keyframes fp-particle {
+    0%   { transform: translate(0,0) scale(1); opacity: 1; }
+    100% { transform: translate(var(--px), var(--py)) scale(0); opacity: 0; }
+  }
+
+  /* ── First Place: Scan line ── */
+  @keyframes fp-scan {
+    from { transform: translateY(-100%); }
+    to   { transform: translateY(400%); }
+  }
 `;
 
-function StatusScreen({ icon, title, sub }: { icon: React.ReactNode; title: string; sub: string }) {
-  return (
-    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", textAlign: "center", padding: "0 24px" }}>
-      <div className="ib-status-icon">{icon}</div>
-      <div style={{ fontSize: 18, fontWeight: 700, color: "#ededed", marginBottom: 6 }}>{title}</div>
-      <div style={{ fontSize: 12, color: "rgba(255,255,255,0.3)", lineHeight: 1.5 }}>{sub}</div>
-    </div>
-  );
-}
 
 const compatColor = (p: number) => p >= 80 ? "#6ee7b7" : p >= 60 ? "#D4AF37" : p >= 40 ? "#fb923c" : "#f87171";
+
+// ── FirstPlaceReveal component ────────────────────────────────────────────────
+function FirstPlaceReveal({ song, secondPlace }: {
+  song: { title: string; artist: string; average: number; voteCount: number };
+  secondPlace: { title: string; artist: string; average: number | null; voteCount: number } | null;
+}) {
+  const confetti = React.useMemo(() =>
+    Array.from({ length: 28 }, (_, i) => ({
+      id: i,
+      left: `${5 + Math.random() * 90}%`,
+      delay: `${Math.random() * 0.6}s`,
+      dur: `${1.2 + Math.random() * 1}s`,
+      color: ["#D4AF37", "#FFE066", "#FFC94D", "#fff", "#f0c040", "#ffe8a0", "#ffd700"][i % 7],
+      ty: `${80 + Math.random() * 120}px`,
+      rot: `${(Math.random() - 0.5) * 720}deg`,
+      sc: `${0.1 + Math.random() * 0.5}`,
+      size: `${6 + Math.random() * 8}px`,
+      shape: i % 3,
+    }))
+  , []);
+
+  const rays = Array.from({ length: 12 }, (_, i) => i * 30);
+
+  const particles = React.useMemo(() =>
+    Array.from({ length: 16 }, (_, i) => {
+      const angle = (i / 16) * Math.PI * 2;
+      const dist = 55 + Math.random() * 30;
+      return {
+        id: i,
+        px: `${Math.cos(angle) * dist}px`,
+        py: `${Math.sin(angle) * dist}px`,
+        delay: `${Math.random() * 0.3}s`,
+        size: `${3 + Math.random() * 4}px`,
+        color: i % 2 === 0 ? "#D4AF37" : "#FFF",
+      };
+    })
+  , []);
+
+  return (
+    <>
+    <div
+      style={{
+        position: "relative",
+        flexShrink: 0,
+        marginBottom: 10,
+        borderRadius: 18,
+        overflow: "hidden",
+        background: "linear-gradient(135deg, rgba(212,175,55,0.13) 0%, rgba(20,16,0,0.95) 60%, rgba(212,175,55,0.07) 100%)",
+        border: "1.5px solid rgba(212,175,55,0.45)",
+        padding: "22px 18px 18px",
+        minHeight: 200,
+      }}
+    >
+      {/* Outer glow */}
+      <div style={{
+        position: "absolute", inset: -2 as any, borderRadius: 20,
+        boxShadow: "0 0 60px rgba(212,175,55,0.35), 0 0 120px rgba(212,175,55,0.15)",
+        animation: "fp-glow-pulse 1.8s ease-in-out infinite",
+        pointerEvents: "none", zIndex: 0,
+      }} />
+
+      {/* Rotating burst rays */}
+      <div style={{
+        position: "absolute", top: "50%", left: "50%",
+        width: 320, height: 320,
+        marginLeft: -160, marginTop: -160,
+        animation: "fp-ray-spin 18s linear infinite",
+        pointerEvents: "none", zIndex: 1, opacity: 0.18,
+      }}>
+        {rays.map((deg) => (
+          <div key={deg} style={{
+            position: "absolute",
+            top: "50%", left: "50%",
+            width: 2, height: 160,
+            marginLeft: -1,
+            transformOrigin: "top center",
+            background: "linear-gradient(to bottom, transparent 0%, #D4AF37 40%, transparent 100%)",
+            transform: `rotate(${deg}deg)`,
+            animation: "fp-ray-fadein 0.6s ease both",
+            animationDelay: `${(deg / 360 * 0.5).toFixed(2)}s`,
+            ["--deg" as any]: `${deg}deg`,
+          }} />
+        ))}
+      </div>
+
+      {/* Scan line */}
+      <div style={{
+        position: "absolute", top: 0, left: 0, right: 0, height: "30%",
+        background: "linear-gradient(to bottom, transparent, rgba(212,175,55,0.06), transparent)",
+        animation: "fp-scan 2.5s linear infinite",
+        pointerEvents: "none", zIndex: 2,
+      }} />
+
+      {/* Confetti */}
+      {confetti.map((c) => (
+        <div key={c.id} style={{
+          position: "absolute",
+          top: "20%", left: c.left,
+          width: c.size, height: c.size,
+          borderRadius: c.shape === 0 ? "50%" : c.shape === 1 ? "2px" : "0",
+          background: c.color,
+          animation: `fp-conf ${c.dur} ease-out ${c.delay} both`,
+          ["--ty" as any]: c.ty,
+          ["--rot" as any]: c.rot,
+          ["--sc" as any]: c.sc,
+          zIndex: 3, pointerEvents: "none",
+        }} />
+      ))}
+
+      {/* Main content */}
+      <div style={{ position: "relative", zIndex: 10, display: "flex", flexDirection: "column", gap: 0 }}>
+
+        {/* Position number + medal */}
+        <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, position: "relative" }}>
+          <div style={{ position: "relative", flexShrink: 0 }}>
+            {/* Particles ring */}
+            {particles.map((p) => (
+              <div key={p.id} style={{
+                position: "absolute",
+                top: "50%", left: "50%",
+                width: p.size, height: p.size,
+                borderRadius: "50%",
+                background: p.color,
+                animation: `fp-particle 0.9s ease-out ${p.delay} both`,
+                ["--px" as any]: p.px,
+                ["--py" as any]: p.py,
+                zIndex: 5, pointerEvents: "none",
+              }} />
+            ))}
+            <span style={{
+              fontFamily: "'DM Mono', monospace",
+              fontSize: 72,
+              fontWeight: 400,
+              lineHeight: 1,
+              letterSpacing: "-3px",
+              display: "block",
+              animation: "fp-num-slam 0.75s cubic-bezier(0.16,1,0.3,1) 0.05s both",
+              background: "linear-gradient(135deg, #FFE566 0%, #D4AF37 35%, #FFF8DC 55%, #D4AF37 70%, #B8860B 100%)",
+              backgroundSize: "200% auto",
+              WebkitBackgroundClip: "text",
+              WebkitTextFillColor: "transparent",
+              backgroundClip: "text",
+            }}>
+              1°
+            </span>
+          </div>
+
+          {/* Medal */}
+          <span style={{
+            fontSize: 44,
+            lineHeight: 1,
+            display: "block",
+            animation: "fp-medal-drop 0.7s cubic-bezier(0.34,1.56,0.64,1) 0.4s both",
+            filter: "drop-shadow(0 4px 16px rgba(212,175,55,0.6))",
+          }}>🥇</span>
+        </div>
+
+        {/* Title */}
+        <div style={{
+          fontSize: 26,
+          fontWeight: 800,
+          lineHeight: 1.15,
+          letterSpacing: "-0.5px",
+          marginBottom: 5,
+          background: "linear-gradient(90deg, #FFE566, #D4AF37 40%, #FFF8DC 55%, #D4AF37 80%, #FFE566)",
+          backgroundSize: "200% auto",
+          WebkitBackgroundClip: "text",
+          WebkitTextFillColor: "transparent",
+          backgroundClip: "text",
+          animationName: "fp-title-up, fp-shimmer",
+          animationDuration: "0.55s, 3s",
+          animationDelay: "0.6s, 1.2s",
+          animationTimingFunction: "ease, linear",
+          animationFillMode: "both, none",
+          animationIterationCount: "1, infinite",
+        } as React.CSSProperties}>
+          {song.title}
+        </div>
+
+        {/* Artist */}
+        <div style={{
+          fontSize: 10,
+          color: "rgba(255,255,255,0.35)",
+          letterSpacing: "0.1em",
+          textTransform: "uppercase",
+          marginBottom: 16,
+          animation: "fp-title-up 0.45s ease 0.75s both",
+        }}>
+          {song.artist}
+        </div>
+
+        {/* Score */}
+        <div style={{
+          display: "flex",
+          alignItems: "baseline",
+          gap: 10,
+          borderTop: "1px solid rgba(212,175,55,0.25)",
+          paddingTop: 14,
+          animation: "fp-score-pop 0.6s cubic-bezier(0.34,1.56,0.64,1) 0.85s both",
+        }}>
+          <span style={{
+            fontFamily: "'DM Mono', monospace",
+            fontSize: 54,
+            fontWeight: 400,
+            color: "#D4AF37",
+            lineHeight: 1,
+            letterSpacing: "-2px",
+            filter: "drop-shadow(0 0 20px rgba(212,175,55,0.6))",
+          }}>
+            {song.average.toFixed(1)}
+          </span>
+          <div style={{ display: "flex", flexDirection: "column" }}>
+            <span style={{ fontSize: 11, color: "rgba(255,255,255,0.3)" }}>
+              {song.voteCount} {song.voteCount === 1 ? "voto" : "voti"}
+            </span>
+            <span style={{ fontSize: 9, color: "rgba(212,175,55,0.5)", letterSpacing: "0.07em", textTransform: "uppercase", marginTop: 1 }}>
+              media finale
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Corner accent lines */}
+      {(["top", "bottom"] as const).flatMap((v) =>
+        (["left", "right"] as const).map((h) => (
+          <div key={`${v}-${h}`} style={{
+            position: "absolute",
+            [v]: 8, [h]: 8,
+            width: 18, height: 18,
+            borderTop: v === "top" ? "2px solid rgba(212,175,55,0.5)" : "none",
+            borderBottom: v === "bottom" ? "2px solid rgba(212,175,55,0.5)" : "none",
+            borderLeft: h === "left" ? "2px solid rgba(212,175,55,0.5)" : "none",
+            borderRight: h === "right" ? "2px solid rgba(212,175,55,0.5)" : "none",
+            pointerEvents: "none", zIndex: 20,
+          }} />
+        ))
+      )}
+    </div>
+
+    {/* ── 2° posto: card compatta argentata ── */}
+    {secondPlace && secondPlace.average !== null && (
+      <div style={{
+        position: "relative",
+        borderRadius: 12,
+        overflow: "hidden",
+        background: "linear-gradient(135deg, rgba(192,192,192,0.08) 0%, rgba(10,10,14,0.95) 100%)",
+        border: "1px solid rgba(192,192,192,0.2)",
+        padding: "10px 14px",
+        display: "flex",
+        alignItems: "center",
+        gap: 10,
+        animation: "fp-title-up 0.45s ease 1.1s both",
+        flexShrink: 0,
+      }}>
+        {/* Pos */}
+        <span style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 22,
+          fontWeight: 400,
+          color: "#C0C0C0",
+          lineHeight: 1,
+          letterSpacing: "-1px",
+          flexShrink: 0,
+        }}>2°</span>
+        <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>🥈</span>
+        {/* Info */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: 700,
+            color: "#C0C0C0",
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+            letterSpacing: "-0.2px",
+          }}>{secondPlace.title}</div>
+          <div style={{
+            fontSize: 9,
+            color: "rgba(192,192,192,0.4)",
+            letterSpacing: "0.08em",
+            textTransform: "uppercase",
+            marginTop: 2,
+          }}>{secondPlace.artist}</div>
+        </div>
+        {/* Score */}
+        <span style={{
+          fontFamily: "'DM Mono', monospace",
+          fontSize: 20,
+          fontWeight: 400,
+          color: "#C0C0C0",
+          letterSpacing: "-1px",
+          flexShrink: 0,
+        }}>{secondPlace.average.toFixed(1)}</span>
+      </div>
+    )}
+    </>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function InteractBox({
   roomCode, currentUser, users, userToken,
@@ -103,12 +470,19 @@ export default function InteractBox({
   const [finalLeaderboard, setFinalLeaderboard] = useState<FinalEntry[]>([]);
   const [finalCountdown, setFinalCountdown] = useState<number | null>(null);
   const [showFinalLeaderboard, setShowFinalLeaderboard] = useState(false);
-  const [myVotes, setMyVotes] = useState<{ songId: number; value: number; night: number }[]>([]);
+  const [myVotes, setMyVotes] = useState<{ songId: number; value: number }[]>([]);
   const [allRoomVotes, setAllRoomVotes] = useState<{ profile_id: number; song_id: number; value: number }[]>([]);
   const [lbView, setLbView] = useState<"stanza" | "mia" | "affinita">("stanza");
   const [lbMode, setLbMode] = useState<"serata" | "cumulativa">("serata");
   const [cumulativeLeaderboard, setCumulativeLeaderboard] = useState<CumulativeEntry[]>([]);
   const finalCountdownRef = useRef<NodeJS.Timeout | null>(null);
+  // Ref sempre aggiornato per usarlo negli effects senza dipendenze stale
+  const finalLeaderboardRef = useRef<FinalEntry[]>([]);
+  // Quando il 1° posto viene mostrato, lo "blocchiamo" qui finché l'utente non clicca
+  const [firstPlaceLocked, setFirstPlaceLocked] = useState(false);
+  const firstPlaceShownRef = useRef(false);
+  // Quando l'utente clicca "Vedi le statistiche", non tornare mai più al reveal
+  const [userDismissedFirstPlace, setUserDismissedFirstPlace] = useState(false);
 
   const { status, hasVoted } = useFestival(roomCode, userToken);
   const votes = status?.song?.votes ?? [];
@@ -135,6 +509,8 @@ export default function InteractBox({
     !!status?.type &&
     VOTING_OPEN_STATES.includes(status.type) &&
     !showResults;
+
+  useEffect(() => { finalLeaderboardRef.current = finalLeaderboard; }, [finalLeaderboard]);
 
   // ── Fetch voti di una stanza ──────────────────────────────────────────
   const fetchVotesForRoom = useCallback(async (code: string) => {
@@ -254,19 +630,14 @@ export default function InteractBox({
       } catch {}
     };
     const fetchMyVotesFn = async () => {
-  const token = userToken ?? localStorage.getItem("userToken");
-  if (!token) return;
-  try {
-    const res = await fetch(`/api/get-my-votes`, {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    if (res.ok) {
-      const data = await res.json();
-      console.log("myVotes fetched:", data.length, data[0]);
-      setMyVotes(data);
-    }
-  } catch {}
-};
+      if (!userToken) return;
+      try {
+        const res = await fetch(`/api/get-my-votes?roomCode=${roomCode}`, {
+          headers: { Authorization: `Bearer ${userToken}` },
+        });
+        if (res.ok) setMyVotes(await res.json());
+      } catch {}
+    };
     const fetchAllVotes = async () => {
       try {
         const res = await fetch(`/api/get-all-votes?roomCode=${roomCode}`);
@@ -309,11 +680,46 @@ export default function InteractBox({
     if (timeLeft === 0) { setShowResults(false); showResultsRef.current = false; setTimeLeft(null); }
   }, [timeLeft]);
 
+  // ── Lock 1° posto ─────────────────────────────────────────────────────
+  // Non confrontiamo cidx con total (l'API filtra canzoni senza voti, quindi
+  // total può non corrispondere al classificaIndex del server).
+  // Strategia: il lock scatta quando la canzone corrente (cidx-1 nell'ascending)
+  // è la prima della classifica, cioè non c'è nessuna canzone prima di lei.
+  useEffect(() => {
+    if (status?.type !== "classifica") {
+      firstPlaceShownRef.current = false;
+      setFirstPlaceLocked(false);
+      setUserDismissedFirstPlace(false);
+      return;
+    }
+    if (firstPlaceShownRef.current) return;
+    if (userDismissedFirstPlace) return; // utente ha già visto, non re-lockare
+    if (!showFinalLeaderboard) return; // aspetta che il countdown finisca
+
+    const withVotes = finalLeaderboard.filter((s) => s.average !== null);
+    const ascending = [...withVotes].sort((a, b) => (a.average ?? 0) - (b.average ?? 0));
+    const total = ascending.length;
+    const cidx = status?.classificaIndex ?? 0;
+
+    // La canzone mostrata è ascending[cidx-1].
+    // È il vincitore se è l'ultima della ascending (indice total-1),
+    // oppure se non esiste ascending[cidx] (niente dopo di lei).
+    const shownIndex = cidx - 1;
+    const isWinner = total > 0 && shownIndex >= 0 && shownIndex === total - 1;
+
+    if (isWinner) {
+      firstPlaceShownRef.current = true;
+      setFirstPlaceLocked(true);
+    }
+  }, [status?.type, status?.classificaIndex, finalLeaderboard, showFinalLeaderboard]);
+
   if (!status || !currentUser) return null;
 
   // ── Classifica finale render ──────────────────────────────────────────
   const renderClassificaFinale = () => {
-    if (!showFinalLeaderboard) {
+    // Countdown iniziale prima di mostrare la schermata
+    // Se il 1° posto è locked, bypassiamo il countdown e andiamo dritti al reveal
+    if (!showFinalLeaderboard && !firstPlaceLocked) {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12, textAlign: "center", padding: "0 24px" }}>
           <Trophy size={22} color="#D4AF37" strokeWidth={1.5} style={{ opacity: 0.7 }} />
@@ -327,33 +733,188 @@ export default function InteractBox({
       );
     }
 
-    const myVotesMap = (() => {
-      if (lbMode === "serata") {
-        // Solo i voti della serata corrente (night più alta votata)
-        const latestNight = Math.max(...myVotes.map((v) => v.night ?? 0));
-        const filtered = isFinite(latestNight) ? myVotes.filter((v) => v.night === latestNight) : myVotes;
-        return new Map<number, number>(filtered.map((v) => [v.songId, v.value]));
-      } else {
-        // Cumulativa: media dei voti per canzone su tutte le serate
-        const grouped = new Map<number, number[]>();
-        myVotes.forEach((v) => {
-          if (!grouped.has(v.songId)) grouped.set(v.songId, []);
-          grouped.get(v.songId)!.push(v.value);
-        });
-        return new Map<number, number>(
-          [...grouped.entries()].map(([songId, vals]) => [
-            songId,
-            vals.reduce((a, b) => a + b, 0) / vals.length,
-          ])
-        );
-      }
-    })();
-    // Frecce: usano il campo `trend` direttamente dall'API cumulativa
-    const activeBaseList = lbMode === "cumulativa" && cumulativeLeaderboard.length > 0 ? cumulativeLeaderboard : finalLeaderboard;
-    const withVotes = activeBaseList.filter((s) => s.average !== null);
-    const overall = withVotes.length > 0 ? withVotes.reduce((s, e) => s + e.average!, 0) / withVotes.length : null;
+    // Ordine ascending (peggiore → migliore) per il reveal
+    const withVotes = finalLeaderboard.filter((s) => s.average !== null);
+    const ascending = [...withVotes].sort((a, b) => (a.average ?? 0) - (b.average ?? 0));
+    const total = ascending.length;
+    const cidx = status?.classificaIndex ?? 0;
+    // isComplete = siamo oltre l'ultima canzone E il lock non ci tiene fermi
+    // Usiamo shownIndex per non dipendere dalla corrispondenza cidx<->total
+    const shownIndex = cidx - 1;
+    // Se l'utente ha cliccato "Vedi le statistiche" → classifica completa sempre
+    const isComplete = userDismissedFirstPlace || ((total > 0 && shownIndex > total - 1) && !firstPlaceLocked);
 
-    const personalList = [...activeBaseList].sort((a, b) => {
+    // ── FASE REVEAL ──────────────────────────────────────────────────────
+    if (!isComplete) {
+      // Se locked: mostriamo sempre l'ultimo della ascending (= il vincitore)
+      const effectiveCidx = firstPlaceLocked ? total : cidx;
+      const shown = effectiveCidx > 0 ? ascending[effectiveCidx - 1] : null;
+      const realPos = total - effectiveCidx + 1;
+      const prevRevealed = ascending.slice(0, Math.max(0, effectiveCidx - 1)).reverse();
+
+      const isTop3 = cidx > 0 && realPos <= 3;
+      const medal = realPos === 1 ? "🥇" : realPos === 2 ? "🥈" : realPos === 3 ? "🥉" : null;
+
+      const podiumColor = realPos === 1 ? "#D4AF37" : realPos === 2 ? "#C0C0C0" : realPos === 3 ? "#CD7F32" : "#ededed";
+      const podiumBg = realPos === 1
+        ? "linear-gradient(135deg, rgba(212,175,55,0.12) 0%, rgba(212,175,55,0.04) 100%)"
+        : realPos === 2
+        ? "linear-gradient(135deg, rgba(192,192,192,0.1) 0%, rgba(192,192,192,0.03) 100%)"
+        : realPos === 3
+        ? "linear-gradient(135deg, rgba(205,127,50,0.1) 0%, rgba(205,127,50,0.03) 100%)"
+        : "transparent";
+      const podiumBorder = realPos === 1
+        ? "rgba(212,175,55,0.3)"
+        : realPos === 2
+        ? "rgba(192,192,192,0.2)"
+        : realPos === 3
+        ? "rgba(205,127,50,0.2)"
+        : "rgba(255,255,255,0.06)";
+
+      return (
+        <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "16px 14px 14px" }}>
+
+          {/* Header */}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexShrink: 0 }}>
+            <span className="ib-pill" style={{ borderColor: "rgba(212,175,55,0.25)", color: "rgba(212,175,55,0.8)" }}>
+              <Trophy size={9} color="#D4AF37" strokeWidth={2} style={{ marginRight: 2 }} />
+              Classifica finale
+            </span>
+            {cidx > 0 && (
+              <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 11, color: "rgba(255,255,255,0.18)" }}>
+                {realPos}° / {total}
+              </span>
+            )}
+          </div>
+
+          {/* ── Hero card — 1° posto usa FirstPlaceReveal, gli altri la card normale ── */}
+          {shown && realPos === 1 ? (
+            <FirstPlaceReveal
+              key="fp-winner"
+              song={{ title: shown.title, artist: shown.artist, average: shown.average!, voteCount: shown.voteCount }}
+              secondPlace={ascending.length >= 2 ? ascending[ascending.length - 2] : null}
+            />
+          ) : shown ? (
+            <div
+              key={`entry-${cidx}`}
+              className="cl-reveal-entry"
+              style={{
+                flexShrink: 0,
+                marginBottom: prevRevealed.length > 0 ? 14 : 0,
+                background: podiumBg,
+                border: `1px solid ${podiumBorder}`,
+                borderRadius: 16,
+                padding: "18px 16px",
+              }}
+            >
+              {/* Posizione + medaglia */}
+              <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
+                <span
+                  className={isTop3 ? "cl-pos-pop" : undefined}
+                  style={{
+                    fontFamily: "'DM Mono', monospace",
+                    fontSize: isTop3 ? 42 : 28,
+                    fontWeight: 400,
+                    color: podiumColor,
+                    lineHeight: 1,
+                    letterSpacing: "-1px",
+                  }}
+                >
+                  {realPos}°
+                </span>
+                {medal && (
+                  <span style={{ fontSize: 32, lineHeight: 1 }}>{medal}</span>
+                )}
+              </div>
+
+              {/* Titolo */}
+              <div
+                style={{
+                  fontSize: isTop3 ? 24 : 20,
+                  fontWeight: 800,
+                  color: isTop3 ? podiumColor : "#ededed",
+                  lineHeight: 1.15,
+                  letterSpacing: "-0.3px",
+                  marginBottom: 4,
+                }}
+              >
+                {shown.title}
+              </div>
+              <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 14 }}>
+                {shown.artist}
+              </div>
+
+              {/* Score */}
+              <div style={{ display: "flex", alignItems: "baseline", gap: 8, borderTop: `1px solid ${podiumBorder}`, paddingTop: 12 }}>
+                <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 48, fontWeight: 400, color: podiumColor, lineHeight: 1, letterSpacing: "-2px" }}>
+                  {shown.average!.toFixed(1)}
+                </span>
+                <span style={{ fontSize: 11, color: "rgba(255,255,255,0.25)" }}>
+                  {shown.voteCount} {shown.voteCount === 1 ? "voto" : "voti"}
+                </span>
+              </div>
+            </div>
+          ) : (
+            /* cidx = 0: attesa */
+            <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, textAlign: "center" }}>
+              <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(212,175,55,0.06)", border: "1px solid rgba(212,175,55,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
+                <Trophy size={20} color="#D4AF37" strokeWidth={1.5} style={{ opacity: 0.5 }} />
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.2)", letterSpacing: "0.04em" }}>
+                In attesa…
+              </div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.1)" }}>
+                {total} {total === 1 ? "canzone" : "canzoni"} in gara
+              </div>
+            </div>
+          )}
+
+          {/* Già svelate — lista compatta scrollabile */}
+          {prevRevealed.length > 0 && (
+            <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3, minHeight: 0 }}>
+              <div style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.18)", fontWeight: 600, marginBottom: 4, flexShrink: 0 }}>
+                Già svelate
+              </div>
+              {prevRevealed.map((song, i) => {
+                const pos = total - (cidx - 2 - i);
+                const m = pos === 1 ? "🥇" : pos === 2 ? "🥈" : pos === 3 ? "🥉" : null;
+                return (
+                  <div
+                    key={song.id}
+                    className="ib-row ib-row-other cl-reveal-row"
+                    style={{ opacity: 0.55, animationDelay: `${i * 30}ms` }}
+                  >
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", width: 20, textAlign: "center", flexShrink: 0 }}>
+                      {m ?? pos}
+                    </span>
+                    <span style={{ flex: 1, minWidth: 0 }}>
+                      <span style={{ display: "block", fontSize: 12, color: "rgba(255,255,255,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</span>
+                      <span style={{ display: "block", fontSize: 9, color: "rgba(255,255,255,0.18)", letterSpacing: "0.06em", textTransform: "uppercase", marginTop: 1 }}>{song.artist}</span>
+                    </span>
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(255,255,255,0.35)", flexShrink: 0 }}>
+                      {song.average!.toFixed(1)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    // ── CLASSIFICA COMPLETA — tutti i tab disponibili ───────────────────
+    const myVotesMap = (() => {
+      const latestNight = myVotes.length > 0 ? Math.max(...myVotes.map((v) => v.night ?? 0)) : 0;
+      const filtered = isFinite(latestNight) ? myVotes.filter((v) => v.night === latestNight) : myVotes;
+      return new Map<number, number>(filtered.map((v) => [v.songId, v.value]));
+    })();
+
+    const baseList = lbMode === "cumulativa" && cumulativeLeaderboard.length > 0 ? cumulativeLeaderboard : finalLeaderboard;
+    const baseWithVotes = baseList.filter((s) => s.average !== null);
+    const overall = baseWithVotes.length > 0 ? baseWithVotes.reduce((s, e) => s + e.average!, 0) / baseWithVotes.length : null;
+
+    const personalList = [...baseList].sort((a, b) => {
       const vA = myVotesMap.get(a.id) ?? null;
       const vB = myVotesMap.get(b.id) ?? null;
       if (vA !== null && vB !== null) return vB - vA;
@@ -362,19 +923,18 @@ export default function InteractBox({
       if (a.average !== null && b.average !== null) return b.average - a.average;
       return 0;
     });
-    const roomRankMap = new Map(activeBaseList.map((s, i) => [s.id, i + 1]));
-    const activeList = lbView === "stanza" ? activeBaseList : personalList;
+    const roomRankMap = new Map(baseList.map((s, i) => [s.id, i + 1]));
+    const activeList = lbView === "stanza" ? baseList : personalList;
 
-    // ── Affinità — usa profile_id ─────────────────────────────────────
+    // Affinità
     const myProfileId = currentUser.profile_id;
     const myAllVotes = allRoomVotes.filter((v) => v.profile_id === myProfileId);
-
     let roomCompat: number | null = null;
     if (myAllVotes.length > 0) {
       const pairs: { my: number; avg: number }[] = [];
       myAllVotes.forEach((mv) => {
         const others = allRoomVotes.filter((v) => v.song_id === mv.song_id && v.profile_id !== myProfileId);
-        if (others.length === 0) return;
+        if (!others.length) return;
         const avg = others.reduce((s, v) => s + v.value, 0) / others.length;
         pairs.push({ my: mv.value, avg });
       });
@@ -383,7 +943,6 @@ export default function InteractBox({
         roomCompat = Math.max(0, Math.round((1 - avgDiff / 9) * 100));
       }
     }
-
     const otherProfileIds = [...new Set(allRoomVotes.map((v) => v.profile_id))].filter((id) => id !== myProfileId);
     const personCompats = otherProfileIds.map((pid) => {
       const theirVotes = allRoomVotes.filter((v) => v.profile_id === pid);
@@ -392,24 +951,18 @@ export default function InteractBox({
         const match = theirVotes.find((tv) => tv.song_id === mv.song_id);
         if (match) pairs.push({ my: mv.value, their: match.value });
       });
-      if (pairs.length === 0) return null;
+      if (!pairs.length) return null;
       const avgDiff = pairs.reduce((s, p) => s + Math.abs(p.my - p.their), 0) / pairs.length;
       const pct = Math.max(0, Math.round((1 - avgDiff / 9) * 100));
       const user = users.find((u) => u.profile_id === pid);
       return user ? { user, pct, songs: pairs.length } : null;
     }).filter(Boolean).sort((a, b) => b!.pct - a!.pct) as { user: User; pct: number; songs: number }[];
-
     const hasCompat = roomCompat !== null || personCompats.length > 0;
-
-    console.log("myVotesMap", [...myVotesMap.entries()]);
-    console.log("finalLeaderboard ids:", finalLeaderboard.map(s => s.id));
-console.log("cumulativeLeaderboard ids:", cumulativeLeaderboard.map(s => s.id));
-console.log("myVotes raw", myVotes);
 
     return (
       <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "16px 14px 14px" }}>
 
-        {/* Header con tab icone */}
+        {/* Header tab */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexShrink: 0 }}>
           <span className="ib-pill" style={{ borderColor: "rgba(212,175,55,0.25)", color: "rgba(212,175,55,0.8)" }}>
             {lbView === "stanza" && <><Trophy size={9} color="#D4AF37" strokeWidth={2} style={{ marginRight: 2 }} />Classifica</>}
@@ -421,12 +974,8 @@ console.log("myVotes raw", myVotes);
               const isActive = lbView === v;
               const Icon = v === "stanza" ? Trophy : v === "mia" ? Star : Heart;
               return (
-                <button
-                  key={v}
-                  onClick={() => setLbView(v as any)}
-                  title={v === "stanza" ? "Classifica" : v === "mia" ? "La mia" : "Affinità"}
-                  style={{ width: 34, height: 28, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, border: "none", cursor: "pointer", transition: "background 0.15s", background: isActive ? "rgba(255,255,255,0.09)" : "transparent", color: isActive ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)" }}
-                >
+                <button key={v} onClick={() => setLbView(v as any)}
+                  style={{ width: 34, height: 28, display: "flex", alignItems: "center", justifyContent: "center", borderRadius: 6, border: "none", cursor: "pointer", transition: "background 0.15s", background: isActive ? "rgba(255,255,255,0.09)" : "transparent", color: isActive ? "rgba(255,255,255,0.85)" : "rgba(255,255,255,0.28)" }}>
                   <Icon size={13} strokeWidth={isActive ? 2.5 : 1.5} />
                 </button>
               );
@@ -450,7 +999,7 @@ console.log("myVotes raw", myVotes);
           <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 52, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px" }}>{overall.toFixed(2)}</div>
             <div style={{ fontSize: 11, color: "rgba(255,255,255,0.28)", marginTop: 4 }}>
-              {lbMode === "cumulativa" ? "media cumulativa" : "media serata"} · {withVotes.length} {withVotes.length === 1 ? "canzone" : "canzoni"}
+              {lbMode === "cumulativa" ? "media cumulativa" : "media serata"} · {baseWithVotes.length} {baseWithVotes.length === 1 ? "canzone" : "canzoni"}
             </div>
           </div>
         )}
@@ -492,17 +1041,16 @@ console.log("myVotes raw", myVotes);
           </div>
         )}
 
-        {/* ── Lista canzoni ── */}
+        {/* Lista canzoni */}
         {(lbView === "stanza" || lbView === "mia") && (
           <div style={{ display: "flex", flexDirection: "column", gap: 5, overflowY: "auto", flex: 1 }}>
             {activeList.length === 0 ? (
               <div style={{ fontSize: 13, color: "rgba(255,255,255,0.22)", textAlign: "center", paddingTop: 24 }}>Caricamento…</div>
             ) : activeList.map((song, i) => {
-              const hasVotesEntry = song.average !== null;
-              const isFirst = lbView === "stanza" && hasVotesEntry && i === 0;
+              const hasV = song.average !== null;
+              const isFirst = lbView === "stanza" && hasV && i === 0;
               const myVote = myVotesMap.get(song.id) ?? null;
               const roomRank = lbView === "mia" ? roomRankMap.get(song.id) : null;
-
               let arrow: "up" | "down" | null = null;
               let isNew = false;
               if (lbMode === "cumulativa") {
@@ -511,34 +1059,21 @@ console.log("myVotes raw", myVotes);
                 else if (t === "down") arrow = "down";
                 else if (t === "new") isNew = true;
               }
-
               return (
-                <div key={song.id} className={"ib-row " + (isFirst ? "ib-row-first" : "ib-row-other")} style={{ opacity: hasVotesEntry ? 1 : 0.4 }}>
+                <div key={song.id} className={"ib-row " + (isFirst ? "ib-row-first" : "ib-row-other")} style={{ opacity: hasV ? 1 : 0.4 }}>
                   <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: isFirst ? "#D4AF37" : "rgba(255,255,255,0.2)", width: 16, textAlign: "center", flexShrink: 0 }}>
                     {isFirst ? <Trophy size={11} color="#D4AF37" strokeWidth={2} /> : i + 1}
                   </span>
                   <span style={{ flex: 1, minWidth: 0 }}>
-                    <span style={{ display: "block", fontSize: 13, fontWeight: isFirst ? 700 : 400, color: hasVotesEntry ? "#ededed" : "rgba(255,255,255,0.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</span>
+                    <span style={{ display: "block", fontSize: 13, fontWeight: isFirst ? 700 : 400, color: hasV ? "#ededed" : "rgba(255,255,255,0.3)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</span>
                     <span style={{ display: "block", fontSize: 9, color: isFirst ? "rgba(212,175,55,0.6)" : "rgba(255,255,255,0.25)", letterSpacing: "0.06em", textTransform: "uppercase", marginTop: 1 }}>{song.artist}</span>
                   </span>
-                  {arrow && (
-                    <span style={{ fontSize: 10, flexShrink: 0, marginRight: 4, color: arrow === "up" ? "#6ee7b7" : "#f87171", lineHeight: 1 }}>
-                      {arrow === "up" ? "▲" : "▼"}
-                    </span>
-                  )}
-                  {isNew && (
-                    <span style={{ fontSize: 8, flexShrink: 0, marginRight: 6, color: "#D4AF37", fontFamily: "'DM Mono', monospace", fontWeight: 600, letterSpacing: "0.06em", background: "rgba(212,175,55,0.12)", border: "1px solid rgba(212,175,55,0.25)", borderRadius: 4, padding: "1px 4px" }}>
-                      NEW
-                    </span>
-                  )}
-                  {lbView === "mia" && roomRank !== null && (
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.18)", flexShrink: 0, marginRight: 6 }}>#{roomRank}</span>
-                  )}
-                  {lbView === "stanza" && hasVotesEntry && (
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", flexShrink: 0, marginRight: 6 }}>{song.voteCount}v</span>
-                  )}
-                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 17 : 15, color: isFirst ? "#D4AF37" : hasVotesEntry ? "#ededed" : "rgba(255,255,255,0.15)", flexShrink: 0 }}>
-                    {lbView === "mia" && myVote !== null ? myVote.toFixed(1) : hasVotesEntry ? song.average!.toFixed(1) : "—"}
+                  {arrow && <span style={{ fontSize: 10, flexShrink: 0, marginRight: 4, color: arrow === "up" ? "#6ee7b7" : "#f87171" }}>{arrow === "up" ? "▲" : "▼"}</span>}
+                  {isNew && <span style={{ fontSize: 8, flexShrink: 0, marginRight: 6, color: "#D4AF37", fontFamily: "'DM Mono', monospace", fontWeight: 600, background: "rgba(212,175,55,0.12)", border: "1px solid rgba(212,175,55,0.25)", borderRadius: 4, padding: "1px 4px" }}>NEW</span>}
+                  {lbView === "mia" && roomRank !== null && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.18)", flexShrink: 0, marginRight: 6 }}>#{roomRank}</span>}
+                  {lbView === "stanza" && hasV && <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", flexShrink: 0, marginRight: 6 }}>{song.voteCount}v</span>}
+                  <span style={{ fontFamily: "'DM Mono', monospace", fontSize: isFirst ? 17 : 15, color: isFirst ? "#D4AF37" : hasV ? "#ededed" : "rgba(255,255,255,0.15)", flexShrink: 0 }}>
+                    {lbView === "mia" && myVote !== null ? myVote.toFixed(1) : hasV ? song.average!.toFixed(1) : "—"}
                   </span>
                 </div>
               );
@@ -546,14 +1081,13 @@ console.log("myVotes raw", myVotes);
           </div>
         )}
 
-        {/* ── Affinità: per canzone + totale serata ── */}
+        {/* Affinità */}
         {lbView === "affinita" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", flex: 1 }}>
             {!hasCompat ? (
               <div style={{ fontSize: 12, color: "rgba(255,255,255,0.2)", textAlign: "center", marginTop: 20 }}>Dati non disponibili</div>
             ) : (
               <>
-                {/* Per ogni canzone */}
                 {finalLeaderboard.filter((s) => s.average !== null).map((song) => {
                   const songVotes = allRoomVotes.filter((v) => v.song_id === song.id);
                   const myVoteForSong = songVotes.find((v) => v.profile_id === myProfileId);
@@ -565,27 +1099,18 @@ console.log("myVotes raw", myVotes);
                       songRoomCompat = Math.max(0, Math.round((1 - Math.abs(myVoteForSong.value - avg) / 9) * 100));
                     }
                   }
-
-                  // Coppie di utenti per questa canzone
                   const votingUsers = users.filter((u) => songVotes.some((v) => v.profile_id === u.profile_id));
                   const pairCompats: { userA: string; userB: string; pct: number }[] = [];
                   for (let a = 0; a < votingUsers.length; a++) {
                     for (let b = a + 1; b < votingUsers.length; b++) {
                       const vA = songVotes.find((v) => v.profile_id === votingUsers[a].profile_id)?.value;
                       const vB = songVotes.find((v) => v.profile_id === votingUsers[b].profile_id)?.value;
-                      if (vA !== undefined && vB !== undefined) {
-                        pairCompats.push({
-                          userA: votingUsers[a].username,
-                          userB: votingUsers[b].username,
-                          pct: Math.max(0, Math.round((1 - Math.abs(vA - vB) / 9) * 100)),
-                        });
-                      }
+                      if (vA !== undefined && vB !== undefined)
+                        pairCompats.push({ userA: votingUsers[a].username, userB: votingUsers[b].username, pct: Math.max(0, Math.round((1 - Math.abs(vA - vB) / 9) * 100)) });
                     }
                   }
                   pairCompats.sort((a, b) => b.pct - a.pct);
-
-                  if (songRoomCompat === null && pairCompats.length === 0) return null;
-
+                  if (songRoomCompat === null && !pairCompats.length) return null;
                   return (
                     <div key={song.id} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 12, padding: "11px 13px", display: "flex", flexDirection: "column", gap: 7 }}>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 3 }}>
@@ -613,8 +1138,6 @@ console.log("myVotes raw", myVotes);
                     </div>
                   );
                 })}
-
-                {/* Totale serata */}
                 <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)", paddingTop: 14, display: "flex", flexDirection: "column", gap: 8, flexShrink: 0 }}>
                   <p style={{ fontSize: 10, color: "rgba(255,255,255,0.25)", letterSpacing: "0.07em", textTransform: "uppercase", margin: "0 0 2px", fontWeight: 500 }}>Totale serata</p>
                   {roomCompat !== null && (
@@ -644,6 +1167,7 @@ console.log("myVotes raw", myVotes);
       </div>
     );
   };
+
 
   // ── Card ──────────────────────────────────────────────────────────────
   const renderCard = () => {
@@ -730,11 +1254,23 @@ console.log("myVotes raw", myVotes);
         );
       case "classifica": return renderClassificaFinale();
       case "votazione": return null;
-      case "presentazione": return <StatusScreen icon={<Mic2 size={20} color="#D4AF37" strokeWidth={1.5} />} title="Presentazione" sub="Carlo Conti sta presentando il prossimo artista." />;
-      case "spot": return <StatusScreen icon={<Tv size={20} color="#D4AF37" strokeWidth={1.5} />} title="Pubblicità" sub="Torniamo tra poco in diretta." />;
-      case "pausa": return <StatusScreen icon={<PauseCircle size={20} color="#D4AF37" strokeWidth={1.5} />} title="Pausa tecnica" sub="Il festival riprende tra poco." />;
-      case "attesa": return <StatusScreen icon={<Clock size={20} color="#D4AF37" strokeWidth={1.5} />} title="A breve…" sub="La serata sta per iniziare." />;
-      case "fine": return <StatusScreen icon={<Star size={20} color="#D4AF37" strokeWidth={1.5} />} title="Serata conclusa" sub="Grazie per aver partecipato!" />;
+      case "presentazione": {
+        const eIdx = status.eventIndex ?? 0;
+        return <ScreenPresentazione eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} />;
+      }
+      case "spot": {
+        const eIdx = status.eventIndex ?? 0;
+        return <ScreenSpot eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} />;
+      }
+      case "pausa": {
+        const eIdx = status.eventIndex ?? 0;
+        return <ScreenPausa eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} />;
+      }
+      case "attesa": {
+        const eIdx = status.eventIndex ?? 0;
+        return <ScreenAttesa eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} />;
+      }
+      case "fine": return <ScreenFine />;
       default: return null;
     }
   };
@@ -763,6 +1299,17 @@ console.log("myVotes raw", myVotes);
       );
     }
     if (status.type === "classifica") {
+      if (firstPlaceLocked) {
+        return (
+          <button
+            className="ib-btn ib-btn-live"
+            onClick={() => { setFirstPlaceLocked(false); setUserDismissedFirstPlace(true); }}
+            style={{ background: "rgba(212,175,55,0.12)", color: "rgba(212,175,55,0.85)", border: "1px solid rgba(212,175,55,0.25)" }}
+          >
+            🏆 Vedi le statistiche
+          </button>
+        );
+      }
       return <button disabled className="ib-btn ib-btn-muted">Classifica finale</button>;
     }
     if (status.type === "esibizione") {
@@ -783,7 +1330,7 @@ console.log("myVotes raw", myVotes);
 
   return (
     <>
-      <style dangerouslySetInnerHTML={{ __html: styles }} />
+      <style dangerouslySetInnerHTML={{ __html: styles + statusScreenStyles }} />
       <div className="ib-root ib-fadein" style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%", padding: "0 0px" }}>
         <div className="ib-card" style={{ flex: 1, minHeight: 0 }}>{renderCard()}</div>
         <div style={{ flexShrink: 0 }}>{renderButton()}</div>

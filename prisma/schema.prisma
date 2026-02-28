@@ -128,11 +128,13 @@ model Comment {
 // ─── STATO FESTIVAL ──────────────────────────────────────────────────────────
 
 model FestivalStatus {
-  id         Int      @id @default(1)
-  type       String
-  songId     Int?
-  lastSongId Int?
-  updatedAt  DateTime @updatedAt
+  id           Int      @id @default(1)
+  type         String
+  songId       Int?
+  lastSongId   Int?
+  eventIndex      Int      @default(0)
+  classificaIndex Int?     @default(0)
+  updatedAt       DateTime @updatedAt
 
   song     Song? @relation("CurrentSong", fields: [songId], references: [id])
   lastSong Song? @relation("LastSong", fields: [lastSongId], references: [id])

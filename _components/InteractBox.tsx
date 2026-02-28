@@ -452,7 +452,7 @@ export default function InteractBox({
   const [finalLeaderboard, setFinalLeaderboard] = useState<FinalEntry[]>([]);
   const [finalCountdown, setFinalCountdown] = useState<number | null>(null);
   const [showFinalLeaderboard, setShowFinalLeaderboard] = useState(false);
-  const [myVotes, setMyVotes] = useState<{ songId: number; value: number }[]>([]);
+  const [myVotes, setMyVotes] = useState<{ songId: number; value: number; night?: number }[]>([]);
   const [allRoomVotes, setAllRoomVotes] = useState<{ profile_id: number; song_id: number; value: number }[]>([]);
   const [lbView, setLbView] = useState<"stanza" | "mia" | "affinita">("stanza");
   const [lbMode, setLbMode] = useState<"serata" | "cumulativa">("serata");

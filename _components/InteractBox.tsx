@@ -13,6 +13,7 @@ import { VotingBox } from "./VotingBox";
 import { statusScreenStyles, ScreenPresentazione, ScreenSpot, ScreenPausa, ScreenAttesa, ScreenFine } from "./StatusScreen";
 import { SERATA_TIMELINE } from "@/_lib/timeline";
 import type { User, UserRoom, Vote } from "./types";
+import { useAiCommento } from "./useAiCommento";
 
 type InteractBoxProps = {
   roomCode: string;
@@ -199,7 +200,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
         minHeight: 200,
       }}
     >
-      {/* Outer glow */}
       <div style={{
         position: "absolute", inset: -2 as any, borderRadius: 20,
         boxShadow: "0 0 60px rgba(212,175,55,0.35), 0 0 120px rgba(212,175,55,0.15)",
@@ -207,7 +207,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
         pointerEvents: "none", zIndex: 0,
       }} />
 
-      {/* Rotating burst rays */}
       <div style={{
         position: "absolute", top: "50%", left: "50%",
         width: 320, height: 320,
@@ -231,7 +230,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
         ))}
       </div>
 
-      {/* Scan line */}
       <div style={{
         position: "absolute", top: 0, left: 0, right: 0, height: "30%",
         background: "linear-gradient(to bottom, transparent, rgba(212,175,55,0.06), transparent)",
@@ -239,7 +237,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
         pointerEvents: "none", zIndex: 2,
       }} />
 
-      {/* Confetti */}
       {confetti.map((c) => (
         <div key={c.id} style={{
           position: "absolute",
@@ -255,13 +252,9 @@ function FirstPlaceReveal({ song, secondPlace }: {
         }} />
       ))}
 
-      {/* Main content */}
       <div style={{ position: "relative", zIndex: 10, display: "flex", flexDirection: "column", gap: 0 }}>
-
-        {/* Position number + medal */}
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 14, position: "relative" }}>
           <div style={{ position: "relative", flexShrink: 0 }}>
-            {/* Particles ring */}
             {particles.map((p) => (
               <div key={p.id} style={{
                 position: "absolute",
@@ -292,8 +285,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
               1°
             </span>
           </div>
-
-          {/* Medal */}
           <span style={{
             fontSize: 44,
             lineHeight: 1,
@@ -303,7 +294,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
           }}>🥇</span>
         </div>
 
-        {/* Title */}
         <div style={{
           fontSize: 26,
           fontWeight: 800,
@@ -325,7 +315,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
           {song.title}
         </div>
 
-        {/* Artist */}
         <div style={{
           fontSize: 10,
           color: "rgba(255,255,255,0.35)",
@@ -337,7 +326,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
           {song.artist}
         </div>
 
-        {/* Score */}
         <div style={{
           display: "flex",
           alignItems: "baseline",
@@ -368,7 +356,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
         </div>
       </div>
 
-      {/* Corner accent lines */}
       {(["top", "bottom"] as const).flatMap((v) =>
         (["left", "right"] as const).map((h) => (
           <div key={`${v}-${h}`} style={{
@@ -385,7 +372,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
       )}
     </div>
 
-    {/* ── 2° posto: card compatta argentata ── */}
     {secondPlace && secondPlace.average !== null && (
       <div style={{
         position: "relative",
@@ -400,7 +386,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
         animation: "fp-title-up 0.45s ease 1.1s both",
         flexShrink: 0,
       }}>
-        {/* Pos */}
         <span style={{
           fontFamily: "'DM Mono', monospace",
           fontSize: 22,
@@ -411,7 +396,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
           flexShrink: 0,
         }}>2°</span>
         <span style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>🥈</span>
-        {/* Info */}
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
             fontSize: 13,
@@ -430,7 +414,6 @@ function FirstPlaceReveal({ song, secondPlace }: {
             marginTop: 2,
           }}>{secondPlace.artist}</div>
         </div>
-        {/* Score */}
         <span style={{
           fontFamily: "'DM Mono', monospace",
           fontSize: 20,
@@ -464,7 +447,6 @@ export default function InteractBox({
   const showResultsRef = useRef(false);
   const [resultsVotes, setResultsVotes] = useState<Vote[]>([]);
 
-  // Classifica finale
   type FinalEntry = { id: number; title: string; artist: string; average: number | null; voteCount: number };
   type CumulativeEntry = FinalEntry & { rawAverage?: number; trend?: "up" | "down" | "same" | "new"; previousRank?: number | null; nightCount?: number };
   const [finalLeaderboard, setFinalLeaderboard] = useState<FinalEntry[]>([]);
@@ -476,12 +458,9 @@ export default function InteractBox({
   const [lbMode, setLbMode] = useState<"serata" | "cumulativa">("serata");
   const [cumulativeLeaderboard, setCumulativeLeaderboard] = useState<CumulativeEntry[]>([]);
   const finalCountdownRef = useRef<NodeJS.Timeout | null>(null);
-  // Ref sempre aggiornato per usarlo negli effects senza dipendenze stale
   const finalLeaderboardRef = useRef<FinalEntry[]>([]);
-  // Quando il 1° posto viene mostrato, lo "blocchiamo" qui finché l'utente non clicca
   const [firstPlaceLocked, setFirstPlaceLocked] = useState(false);
   const firstPlaceShownRef = useRef(false);
-  // Quando l'utente clicca "Vedi le statistiche", non tornare mai più al reveal
   const [userDismissedFirstPlace, setUserDismissedFirstPlace] = useState(false);
 
   const { status, hasVoted } = useFestival(roomCode, userToken);
@@ -512,7 +491,11 @@ export default function InteractBox({
 
   useEffect(() => { finalLeaderboardRef.current = finalLeaderboard; }, [finalLeaderboard]);
 
-  // ── Fetch voti di una stanza ──────────────────────────────────────────
+  // ── Determina se l'utente corrente è host ──────────────────────────────
+  const isHost = currentUser
+    ? users.find((u) => u.profile_id === currentUser.profile_id)?.isHost ?? false
+    : false;
+
   const fetchVotesForRoom = useCallback(async (code: string) => {
     try {
       const token = userTokenRef.current;
@@ -525,7 +508,6 @@ export default function InteractBox({
     } catch {}
   }, []);
 
-  // ── Fetch tutte le stanze ─────────────────────────────────────────────
   const fetchRoomData = useCallback(async () => {
     for (const r of userRoomsRef.current) {
       try {
@@ -548,7 +530,6 @@ export default function InteractBox({
     }
   }, []);
 
-  // ── triggerResults ────────────────────────────────────────────────────
   const triggerResults = useCallback((initialVotes: Vote[]) => {
     if (showResultsRef.current) return;
     showResultsRef.current = true;
@@ -566,7 +547,6 @@ export default function InteractBox({
     fetchRoomData();
   }, [onShowResults, fetchRoomData]);
 
-  // ── Voto ──────────────────────────────────────────────────────────────
   const voting = useVoting({
     roomCode, userToken,
     currentSongId: lastSongIdRef.current ?? songId,
@@ -585,7 +565,6 @@ export default function InteractBox({
 
   useEffect(() => { if (hasVoted) onHasVotedChange?.(true); }, [hasVoted]);
 
-  // ── Sync voti ─────────────────────────────────────────────────────────
   const votesKey = votes.map(v => `${v.profile_id}:${v.value}`).join(",");
   useEffect(() => {
     onVotedUsersChange?.(votes.map((v) => v.profile_id));
@@ -596,7 +575,6 @@ export default function InteractBox({
     }
   }, [votesKey]);
 
-  // ── Reset al cambio canzone ───────────────────────────────────────────
   const prevSongIdRef = useRef<number | null>(null);
   useEffect(() => {
     if (songId === null || songId === prevSongIdRef.current) return;
@@ -615,7 +593,6 @@ export default function InteractBox({
     onShowResults?.(false);
   }, [songId]);
 
-  // ── Classifica finale ─────────────────────────────────────────────────
   useEffect(() => {
     if (status?.type !== "classifica") {
       if (finalCountdownRef.current) clearInterval(finalCountdownRef.current);
@@ -667,11 +644,23 @@ export default function InteractBox({
     return () => { if (finalCountdownRef.current) clearInterval(finalCountdownRef.current); };
   }, [status?.type]);
 
-  // ── Commenti + reactions ──────────────────────────────────────────────
   const { chatComments } = useComments({ songId, roomCode, isEsibizione: status?.type === "esibizione", users });
   const chatEndRef = useRef<HTMLDivElement>(null);
   useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatComments.length]);
   const { floating, combo, sendReaction } = useReactions({ songId, roomCode, userToken });
+
+  // ── AI Commento — sincronizzato via DB, generato solo dall'host ────────
+  const aiStates = ["esibizione", "presentazione", "spot", "pausa", "attesa", "ospite", "collegamento"];
+  const { visible: aiVisible, testo: aiTesto, triggerNow: aiTriggerNow } = useAiCommento({
+    type: status?.type,
+    eventIndex: status?.eventIndex ?? 0,
+    songTitle: status?.song?.title,
+    songArtist: status?.song?.artist,
+    enabled: !!status?.type && aiStates.includes(status.type),
+    isHost,                                       // ← nuovo: solo il host genera
+    aiTesto: status?.aiTesto ?? null,             // ← nuovo: testo dal server
+    aiCommentoAt: status?.aiCommentoAt ?? null,   // ← nuovo: timestamp dal server
+  });
 
   useEffect(() => { if (status?.type) onFestivalTypeChange?.(status.type); }, [status?.type]);
   useEffect(() => { onSongIdChange?.(songId); }, [songId]);
@@ -680,11 +669,6 @@ export default function InteractBox({
     if (timeLeft === 0) { setShowResults(false); showResultsRef.current = false; setTimeLeft(null); }
   }, [timeLeft]);
 
-  // ── Lock 1° posto ─────────────────────────────────────────────────────
-  // Non confrontiamo cidx con total (l'API filtra canzoni senza voti, quindi
-  // total può non corrispondere al classificaIndex del server).
-  // Strategia: il lock scatta quando la canzone corrente (cidx-1 nell'ascending)
-  // è la prima della classifica, cioè non c'è nessuna canzone prima di lei.
   useEffect(() => {
     if (status?.type !== "classifica") {
       firstPlaceShownRef.current = false;
@@ -693,17 +677,13 @@ export default function InteractBox({
       return;
     }
     if (firstPlaceShownRef.current) return;
-    if (userDismissedFirstPlace) return; // utente ha già visto, non re-lockare
-    if (!showFinalLeaderboard) return; // aspetta che il countdown finisca
+    if (userDismissedFirstPlace) return;
+    if (!showFinalLeaderboard) return;
 
     const withVotes = finalLeaderboard.filter((s) => s.average !== null);
     const ascending = [...withVotes].sort((a, b) => (a.average ?? 0) - (b.average ?? 0));
     const total = ascending.length;
     const cidx = status?.classificaIndex ?? 0;
-
-    // La canzone mostrata è ascending[cidx-1].
-    // È il vincitore se è l'ultima della ascending (indice total-1),
-    // oppure se non esiste ascending[cidx] (niente dopo di lei).
     const shownIndex = cidx - 1;
     const isWinner = total > 0 && shownIndex >= 0 && shownIndex === total - 1;
 
@@ -717,8 +697,6 @@ export default function InteractBox({
 
   // ── Classifica finale render ──────────────────────────────────────────
   const renderClassificaFinale = () => {
-    // Countdown iniziale prima di mostrare la schermata
-    // Se il 1° posto è locked, bypassiamo il countdown e andiamo dritti al reveal
     if (!showFinalLeaderboard && !firstPlaceLocked) {
       return (
         <div style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", height: "100%", gap: 12, textAlign: "center", padding: "0 24px" }}>
@@ -733,20 +711,14 @@ export default function InteractBox({
       );
     }
 
-    // Ordine ascending (peggiore → migliore) per il reveal
     const withVotes = finalLeaderboard.filter((s) => s.average !== null);
     const ascending = [...withVotes].sort((a, b) => (a.average ?? 0) - (b.average ?? 0));
     const total = ascending.length;
     const cidx = status?.classificaIndex ?? 0;
-    // isComplete = siamo oltre l'ultima canzone E il lock non ci tiene fermi
-    // Usiamo shownIndex per non dipendere dalla corrispondenza cidx<->total
     const shownIndex = cidx - 1;
-    // Se l'utente ha cliccato "Vedi le statistiche" → classifica completa sempre
     const isComplete = userDismissedFirstPlace || ((total > 0 && shownIndex > total - 1) && !firstPlaceLocked);
 
-    // ── FASE REVEAL ──────────────────────────────────────────────────────
     if (!isComplete) {
-      // Se locked: mostriamo sempre l'ultimo della ascending (= il vincitore)
       const effectiveCidx = firstPlaceLocked ? total : cidx;
       const shown = effectiveCidx > 0 ? ascending[effectiveCidx - 1] : null;
       const realPos = total - effectiveCidx + 1;
@@ -773,8 +745,6 @@ export default function InteractBox({
 
       return (
         <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "16px 14px 14px" }}>
-
-          {/* Header */}
           <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 16, flexShrink: 0 }}>
             <span className="ib-pill" style={{ borderColor: "rgba(212,175,55,0.25)", color: "rgba(212,175,55,0.8)" }}>
               <Trophy size={9} color="#D4AF37" strokeWidth={2} style={{ marginRight: 2 }} />
@@ -787,7 +757,6 @@ export default function InteractBox({
             )}
           </div>
 
-          {/* ── Hero card — 1° posto usa FirstPlaceReveal, gli altri la card normale ── */}
           {shown && realPos === 1 ? (
             <FirstPlaceReveal
               key="fp-winner"
@@ -807,7 +776,6 @@ export default function InteractBox({
                 padding: "18px 16px",
               }}
             >
-              {/* Posizione + medaglia */}
               <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}>
                 <span
                   className={isTop3 ? "cl-pos-pop" : undefined}
@@ -822,29 +790,14 @@ export default function InteractBox({
                 >
                   {realPos}°
                 </span>
-                {medal && (
-                  <span style={{ fontSize: 32, lineHeight: 1 }}>{medal}</span>
-                )}
+                {medal && <span style={{ fontSize: 32, lineHeight: 1 }}>{medal}</span>}
               </div>
-
-              {/* Titolo */}
-              <div
-                style={{
-                  fontSize: isTop3 ? 24 : 20,
-                  fontWeight: 800,
-                  color: isTop3 ? podiumColor : "#ededed",
-                  lineHeight: 1.15,
-                  letterSpacing: "-0.3px",
-                  marginBottom: 4,
-                }}
-              >
+              <div style={{ fontSize: isTop3 ? 24 : 20, fontWeight: 800, color: isTop3 ? podiumColor : "#ededed", lineHeight: 1.15, letterSpacing: "-0.3px", marginBottom: 4 }}>
                 {shown.title}
               </div>
               <div style={{ fontSize: 10, color: "rgba(255,255,255,0.3)", letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 14 }}>
                 {shown.artist}
               </div>
-
-              {/* Score */}
               <div style={{ display: "flex", alignItems: "baseline", gap: 8, borderTop: `1px solid ${podiumBorder}`, paddingTop: 12 }}>
                 <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 48, fontWeight: 400, color: podiumColor, lineHeight: 1, letterSpacing: "-2px" }}>
                   {shown.average!.toFixed(1)}
@@ -855,21 +808,15 @@ export default function InteractBox({
               </div>
             </div>
           ) : (
-            /* cidx = 0: attesa */
             <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 12, textAlign: "center" }}>
               <div style={{ width: 48, height: 48, borderRadius: 14, background: "rgba(212,175,55,0.06)", border: "1px solid rgba(212,175,55,0.15)", display: "flex", alignItems: "center", justifyContent: "center" }}>
                 <Trophy size={20} color="#D4AF37" strokeWidth={1.5} style={{ opacity: 0.5 }} />
               </div>
-              <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.2)", letterSpacing: "0.04em" }}>
-                In attesa…
-              </div>
-              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.1)" }}>
-                {total} {total === 1 ? "canzone" : "canzoni"} in gara
-              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: "rgba(255,255,255,0.2)", letterSpacing: "0.04em" }}>In attesa…</div>
+              <div style={{ fontSize: 11, color: "rgba(255,255,255,0.1)" }}>{total} {total === 1 ? "canzone" : "canzoni"} in gara</div>
             </div>
           )}
 
-          {/* Già svelate — lista compatta scrollabile */}
           {prevRevealed.length > 0 && (
             <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 3, minHeight: 0 }}>
               <div style={{ fontSize: 9, letterSpacing: "0.08em", textTransform: "uppercase", color: "rgba(255,255,255,0.18)", fontWeight: 600, marginBottom: 4, flexShrink: 0 }}>
@@ -879,21 +826,13 @@ export default function InteractBox({
                 const pos = total - (cidx - 2 - i);
                 const m = pos === 1 ? "🥇" : pos === 2 ? "🥈" : pos === 3 ? "🥉" : null;
                 return (
-                  <div
-                    key={song.id}
-                    className="ib-row ib-row-other cl-reveal-row"
-                    style={{ opacity: 0.55, animationDelay: `${i * 30}ms` }}
-                  >
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", width: 20, textAlign: "center", flexShrink: 0 }}>
-                      {m ?? pos}
-                    </span>
+                  <div key={song.id} className="ib-row ib-row-other cl-reveal-row" style={{ opacity: 0.55, animationDelay: `${i * 30}ms` }}>
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 10, color: "rgba(255,255,255,0.2)", width: 20, textAlign: "center", flexShrink: 0 }}>{m ?? pos}</span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: "block", fontSize: 12, color: "rgba(255,255,255,0.45)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{song.title}</span>
                       <span style={{ display: "block", fontSize: 9, color: "rgba(255,255,255,0.18)", letterSpacing: "0.06em", textTransform: "uppercase", marginTop: 1 }}>{song.artist}</span>
                     </span>
-                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(255,255,255,0.35)", flexShrink: 0 }}>
-                      {song.average!.toFixed(1)}
-                    </span>
+                    <span style={{ fontFamily: "'DM Mono', monospace", fontSize: 12, color: "rgba(255,255,255,0.35)", flexShrink: 0 }}>{song.average!.toFixed(1)}</span>
                   </div>
                 );
               })}
@@ -903,7 +842,7 @@ export default function InteractBox({
       );
     }
 
-    // ── CLASSIFICA COMPLETA — tutti i tab disponibili ───────────────────
+    // ── CLASSIFICA COMPLETA ─────────────────────────────────────────────
     const myVotesMap = (() => {
       const latestNight = myVotes.length > 0 ? Math.max(...myVotes.map((v) => v.night ?? 0)) : 0;
       const filtered = isFinite(latestNight) ? myVotes.filter((v) => v.night === latestNight) : myVotes;
@@ -926,7 +865,6 @@ export default function InteractBox({
     const roomRankMap = new Map(baseList.map((s, i) => [s.id, i + 1]));
     const activeList = lbView === "stanza" ? baseList : personalList;
 
-    // Affinità
     const myProfileId = currentUser.profile_id;
     const myAllVotes = allRoomVotes.filter((v) => v.profile_id === myProfileId);
     let roomCompat: number | null = null;
@@ -961,8 +899,6 @@ export default function InteractBox({
 
     return (
       <div style={{ display: "flex", flexDirection: "column", width: "100%", height: "100%", padding: "16px 14px 14px" }}>
-
-        {/* Header tab */}
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, flexShrink: 0 }}>
           <span className="ib-pill" style={{ borderColor: "rgba(212,175,55,0.25)", color: "rgba(212,175,55,0.8)" }}>
             {lbView === "stanza" && <><Trophy size={9} color="#D4AF37" strokeWidth={2} style={{ marginRight: 2 }} />Classifica</>}
@@ -983,7 +919,6 @@ export default function InteractBox({
           </div>
         </div>
 
-        {/* Switcher serata / cumulativa */}
         {(lbView === "stanza" || lbView === "mia") && cumulativeLeaderboard.length > 0 && (
           <div style={{ display: "flex", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, padding: 2, gap: 2, marginBottom: 12, flexShrink: 0 }}>
             {(["serata", "cumulativa"] as const).map((m) => (
@@ -994,7 +929,6 @@ export default function InteractBox({
           </div>
         )}
 
-        {/* Sommario stanza */}
         {lbView === "stanza" && overall !== null && (
           <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
             <div style={{ fontFamily: "'DM Mono', monospace", fontSize: 52, fontWeight: 400, color: "#ededed", lineHeight: 1, letterSpacing: "-1px" }}>{overall.toFixed(2)}</div>
@@ -1004,7 +938,6 @@ export default function InteractBox({
           </div>
         )}
 
-        {/* Sommario la mia */}
         {lbView === "mia" && (() => {
           const myVotedSongs = finalLeaderboard.filter((s) => myVotesMap.get(s.id) !== undefined);
           const myOverall = myVotedSongs.length > 0 ? myVotedSongs.reduce((s, e) => s + myVotesMap.get(e.id)!, 0) / myVotedSongs.length : null;
@@ -1025,7 +958,6 @@ export default function InteractBox({
           );
         })()}
 
-        {/* Sommario affinità */}
         {lbView === "affinita" && (
           <div style={{ flexShrink: 0, marginBottom: 14, paddingBottom: 14, borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
             {roomCompat !== null ? (
@@ -1041,7 +973,6 @@ export default function InteractBox({
           </div>
         )}
 
-        {/* Lista canzoni */}
         {(lbView === "stanza" || lbView === "mia") && (
           <div style={{ display: "flex", flexDirection: "column", gap: 5, overflowY: "auto", flex: 1 }}>
             {activeList.length === 0 ? (
@@ -1081,7 +1012,6 @@ export default function InteractBox({
           </div>
         )}
 
-        {/* Affinità */}
         {lbView === "affinita" && (
           <div style={{ display: "flex", flexDirection: "column", gap: 14, overflowY: "auto", flex: 1 }}>
             {!hasCompat ? (
@@ -1167,7 +1097,6 @@ export default function InteractBox({
       </div>
     );
   };
-
 
   // ── Card ──────────────────────────────────────────────────────────────
   const renderCard = () => {
@@ -1256,19 +1185,19 @@ export default function InteractBox({
       case "votazione": return null;
       case "presentazione": {
         const eIdx = status.eventIndex ?? 0;
-        return <ScreenPresentazione eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} />;
+        return <ScreenPresentazione eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} aiTesto={aiVisible ? aiTesto : undefined} />;
       }
       case "spot": {
         const eIdx = status.eventIndex ?? 0;
-        return <ScreenSpot eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} />;
+        return <ScreenSpot eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} aiTesto={aiVisible ? aiTesto : undefined} />;
       }
       case "pausa": {
         const eIdx = status.eventIndex ?? 0;
-        return <ScreenPausa eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} />;
+        return <ScreenPausa eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} aiTesto={aiVisible ? aiTesto : undefined} />;
       }
       case "attesa": {
         const eIdx = status.eventIndex ?? 0;
-        return <ScreenAttesa eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} />;
+        return <ScreenAttesa eventDetails={SERATA_TIMELINE[eIdx] as any} nextEvent={SERATA_TIMELINE[eIdx + 1] as any} aiTesto={aiVisible ? aiTesto : undefined} />;
       }
       case "fine": return <ScreenFine />;
       default: return null;
@@ -1332,7 +1261,9 @@ export default function InteractBox({
     <>
       <style dangerouslySetInnerHTML={{ __html: styles + statusScreenStyles }} />
       <div className="ib-root ib-fadein" style={{ display: "flex", flexDirection: "column", gap: 10, height: "100%", padding: "0 0px" }}>
-        <div className="ib-card" style={{ flex: 1, minHeight: 0 }}>{renderCard()}</div>
+        <div className="ib-card" style={{ flex: 1, minHeight: 0, position: "relative" }}>
+          {renderCard()}
+        </div>
         <div style={{ flexShrink: 0 }}>{renderButton()}</div>
       </div>
     </>

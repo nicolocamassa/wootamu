@@ -1,7 +1,7 @@
 "use client";
 // StatusScreens.tsx
 
-import React from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Mic2, Tv, PauseCircle, Clock, Star, Radio } from "lucide-react";
 
 export const statusScreenStyles = `
@@ -12,6 +12,10 @@ export const statusScreenStyles = `
   @keyframes ss-pulse {
     0%, 100% { opacity: 1; }
     50%       { opacity: 0.2; }
+  }
+  @keyframes ss-title-back {
+    from { opacity: 0; transform: translateY(-4px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
   .ss-root {
@@ -24,7 +28,6 @@ export const statusScreenStyles = `
     animation: ss-fadein 0.3s ease both;
   }
 
-  /* Zona top: pill tipo — occupa spazio fisso */
   .ss-top {
     display: flex;
     justify-content: center;
@@ -32,7 +35,6 @@ export const statusScreenStyles = `
     flex-shrink: 0;
   }
 
-  /* Zona centro: icona + testo + meta — si espande e centra */
   .ss-center {
     flex: 1;
     display: flex;
@@ -44,7 +46,6 @@ export const statusScreenStyles = `
     gap: 0;
   }
 
-  /* Zona bottom: footer durata/poi */
   .ss-bottom {
     display: flex;
     align-items: center;
@@ -55,7 +56,6 @@ export const statusScreenStyles = `
     min-height: 36px;
   }
 
-  /* Pill tipo */
   .ss-pill {
     display: inline-flex;
     align-items: center;
@@ -76,10 +76,8 @@ export const statusScreenStyles = `
     animation: ss-pulse 2.5s ease-in-out infinite;
   }
 
-  /* Icona */
   .ss-icon { margin-bottom: 16px; flex-shrink: 0; }
 
-  /* Titolo */
   .ss-title {
     font-size: 22px;
     font-weight: 800;
@@ -89,7 +87,33 @@ export const statusScreenStyles = `
     margin: 0 0 8px;
   }
 
-  /* Descrizione */
+  /* Titolo AI: stesso layout del titolo normale ma gold + typewriter */
+  .ss-title-ai {
+    font-size: 22px;
+    font-weight: 800;
+    color: #D4AF37;
+    letter-spacing: -0.3px;
+    line-height: 1.2;
+    margin: 0 0 8px;
+    min-height: 1.2em;
+  }
+
+  /* Cursore lampeggiante */
+  @keyframes ss-cursor {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0; }
+  }
+  .ss-cursor {
+    display: inline-block;
+    width: 2px;
+    height: 0.9em;
+    background: #D4AF37;
+    border-radius: 1px;
+    margin-left: 2px;
+    vertical-align: middle;
+    animation: ss-cursor 0.8s ease-in-out infinite;
+  }
+
   .ss-desc {
     font-size: 12px;
     color: rgba(255,255,255,0.35);
@@ -98,7 +122,6 @@ export const statusScreenStyles = `
     max-width: 240px;
   }
 
-  /* Meta dettagli */
   .ss-meta {
     display: flex;
     flex-direction: column;
@@ -118,7 +141,6 @@ export const statusScreenStyles = `
     font-weight: 500;
   }
 
-  /* Footer */
   .ss-footer-dur {
     font-family: 'DM Mono', monospace;
     font-size: 10px;
@@ -139,6 +161,35 @@ export const statusScreenStyles = `
     max-width: 180px;
   }
 `;
+
+// ── Typewriter hook ────────────────────────────────────────────────────────
+function useTypewriter(text: string, speed = 28): { displayed: string; done: boolean } {
+  const [displayed, setDisplayed] = useState("");
+  const [done, setDone] = useState(false);
+  const idxRef = useRef(0);
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setDisplayed("");
+    setDone(false);
+    idxRef.current = 0;
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (!text) return;
+
+    timerRef.current = setInterval(() => {
+      idxRef.current += 1;
+      setDisplayed(text.slice(0, idxRef.current));
+      if (idxRef.current >= text.length) {
+        clearInterval(timerRef.current!);
+        setDone(true);
+      }
+    }, speed);
+
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [text, speed]);
+
+  return { displayed, done };
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -180,11 +231,15 @@ type Props = {
   meta?: { icon: string; text: React.ReactNode }[];
   eventDetails?: EventDetails;
   nextEvent?: EventDetails;
+  aiTesto?: string; // testo AI da mostrare al posto del titolo
 };
 
-function StatusScreen({ typeLabel, dotColor, icon, title, desc, meta, eventDetails, nextEvent }: Props) {
+function StatusScreen({ typeLabel, dotColor, icon, title, desc, meta, eventDetails, nextEvent, aiTesto }: Props) {
   const durationMins = minutesBetween(eventDetails?.time, nextEvent?.time);
   const hasFooter = durationMins !== null || !!nextEvent?.label;
+
+  // Typewriter attivo solo quando c'è testo AI
+  const { displayed, done } = useTypewriter(aiTesto ?? "", 30);
 
   return (
     <div className="ss-root">
@@ -197,12 +252,24 @@ function StatusScreen({ typeLabel, dotColor, icon, title, desc, meta, eventDetai
         </div>
       </div>
 
-      {/* CENTER: tutto il contenuto */}
+      {/* CENTER */}
       <div className="ss-center">
         <div className="ss-icon">{icon}</div>
-        <h2 className="ss-title">{title}</h2>
-        {desc && <p className="ss-desc">{desc}</p>}
-        {meta && meta.length > 0 && (
+
+        {/* Titolo: AI typewriter oppure titolo normale */}
+        {aiTesto ? (
+          <h2 className="ss-title-ai text-white!">
+            {displayed}
+            {/* cursore: lampeggia mentre scrive, scompare quando ha finito */}
+            {!done && <span className="ss-cursor" />}
+          </h2>
+        ) : (
+          <h2 className="ss-title text-white!">{title}</h2>
+        )}
+
+        {/* desc e meta: nascosti mentre l'AI parla */}
+        {!aiTesto && desc && <p className="ss-desc">{desc}</p>}
+        {!aiTesto && meta && meta.length > 0 && (
           <div className="ss-meta">
             {meta.map((m, i) => (
               <div key={i} className="ss-meta-item">
@@ -236,7 +303,7 @@ function StatusScreen({ typeLabel, dotColor, icon, title, desc, meta, eventDetai
 
 // ── Export per tipo ────────────────────────────────────────────────────────
 
-export function ScreenPresentazione({ eventDetails, nextEvent }: { eventDetails?: EventDetails; nextEvent?: EventDetails }) {
+export function ScreenPresentazione({ eventDetails, nextEvent, aiTesto }: { eventDetails?: EventDetails; nextEvent?: EventDetails; aiTesto?: string }) {
   const meta: { icon: string; text: React.ReactNode }[] = [];
   if (eventDetails?.presenter) meta.push({ icon: "🎙️", text: eventDetails.presenter });
   if (eventDetails?.guest) meta.push({ icon: "👤", text: <strong>{eventDetails.guest}</strong> });
@@ -251,11 +318,12 @@ export function ScreenPresentazione({ eventDetails, nextEvent }: { eventDetails?
       meta={meta}
       eventDetails={eventDetails}
       nextEvent={nextEvent}
+      aiTesto={aiTesto}
     />
   );
 }
 
-export function ScreenSpot({ eventDetails, nextEvent }: { eventDetails?: EventDetails; nextEvent?: EventDetails }) {
+export function ScreenSpot({ eventDetails, nextEvent, aiTesto }: { eventDetails?: EventDetails; nextEvent?: EventDetails; aiTesto?: string }) {
   return (
     <StatusScreen
       typeLabel="Pubblicità"
@@ -265,11 +333,12 @@ export function ScreenSpot({ eventDetails, nextEvent }: { eventDetails?: EventDe
       desc="Torniamo tra poco"
       eventDetails={eventDetails}
       nextEvent={nextEvent}
+      aiTesto={aiTesto}
     />
   );
 }
 
-export function ScreenPausa({ eventDetails, nextEvent }: { eventDetails?: EventDetails; nextEvent?: EventDetails }) {
+export function ScreenPausa({ eventDetails, nextEvent, aiTesto }: { eventDetails?: EventDetails; nextEvent?: EventDetails; aiTesto?: string }) {
   return (
     <StatusScreen
       typeLabel="Pausa"
@@ -279,11 +348,12 @@ export function ScreenPausa({ eventDetails, nextEvent }: { eventDetails?: EventD
       desc={eventDetails?.description && eventDetails?.label ? eventDetails.label : undefined}
       eventDetails={eventDetails}
       nextEvent={nextEvent}
+      aiTesto={aiTesto}
     />
   );
 }
 
-export function ScreenAttesa({ eventDetails, nextEvent }: { eventDetails?: EventDetails; nextEvent?: EventDetails }) {
+export function ScreenAttesa({ eventDetails, nextEvent, aiTesto }: { eventDetails?: EventDetails; nextEvent?: EventDetails; aiTesto?: string }) {
   return (
     <StatusScreen
       typeLabel="In attesa"
@@ -293,6 +363,7 @@ export function ScreenAttesa({ eventDetails, nextEvent }: { eventDetails?: Event
       desc={eventDetails?.label}
       eventDetails={eventDetails}
       nextEvent={nextEvent}
+      aiTesto={aiTesto}
     />
   );
 }
@@ -309,7 +380,7 @@ export function ScreenFine() {
   );
 }
 
-export function ScreenOspite({ eventDetails, nextEvent }: { eventDetails?: EventDetails; nextEvent?: EventDetails }) {
+export function ScreenOspite({ eventDetails, nextEvent, aiTesto }: { eventDetails?: EventDetails; nextEvent?: EventDetails; aiTesto?: string }) {
   const meta: { icon: string; text: React.ReactNode }[] = [];
   if (eventDetails?.songs?.length)
     meta.push({ icon: "🎵", text: eventDetails.songs.join(" · ") });
@@ -336,11 +407,12 @@ export function ScreenOspite({ eventDetails, nextEvent }: { eventDetails?: Event
       meta={meta}
       eventDetails={eventDetails}
       nextEvent={nextEvent}
+      aiTesto={aiTesto}
     />
   );
 }
 
-export function ScreenCollegamento({ eventDetails, nextEvent }: { eventDetails?: EventDetails; nextEvent?: EventDetails }) {
+export function ScreenCollegamento({ eventDetails, nextEvent, aiTesto }: { eventDetails?: EventDetails; nextEvent?: EventDetails; aiTesto?: string }) {
   return (
     <StatusScreen
       typeLabel="Collegamento"
@@ -350,6 +422,7 @@ export function ScreenCollegamento({ eventDetails, nextEvent }: { eventDetails?:
       desc={eventDetails?.description && eventDetails?.label ? eventDetails.label : undefined}
       eventDetails={eventDetails}
       nextEvent={nextEvent}
+      aiTesto={aiTesto}
     />
   );
 }

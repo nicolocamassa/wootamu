@@ -1,4 +1,4 @@
-// /api/festival-status/route.ts
+// /app/api/festival-status/route.ts
 import { prisma } from "@/_lib/prisma";
 import { pusher } from "@/_lib/pusher";
 import { NextResponse } from "next/server";
@@ -72,7 +72,6 @@ export async function POST(req: Request) {
 
     // Aggiorna SongPerformance quando inizia esibizione o votazione
     if ((type === "esibizione" || type === "votazione") && songId) {
-      // assicurati che la canzone esista, altrimenti la upsert fallirà con vincolo FK
       const songExists = await prisma.song.findUnique({ where: { id: songId } });
       if (songExists) {
         try {
@@ -91,7 +90,6 @@ export async function POST(req: Request) {
 
     const current = await prisma.festivalStatus.findUnique({ where: { id: 1 } });
 
-    // ensure songId is real before we put it in festivalStatus
     let validSongId: number | null = null;
     if (typeof songId === "number") {
       const songCheck = await prisma.song.findUnique({ where: { id: songId } });
@@ -110,16 +108,20 @@ export async function POST(req: Request) {
     if (typeof eventIndex === "number") updateData.eventIndex = eventIndex;
     if (typeof classificaIndex === "number") updateData.classificaIndex = classificaIndex;
 
-    // Try to upsert; if the Prisma client was not regenerated after schema change
-    // the `classificaIndex` field may cause an unknown-arg error. In that case
-    // retry excluding that field and attempt a raw SQL update as a fallback.
     let updated: any = null;
     let appliedClassifica = false;
     try {
       updated = await prisma.festivalStatus.upsert({
         where: { id: 1 },
         update: updateData,
-        create: { id: 1, type, songId: validSongId, lastSongId, eventIndex: typeof eventIndex === "number" ? eventIndex : 0, classificaIndex: typeof classificaIndex === "number" ? classificaIndex : 0 },
+        create: {
+          id: 1,
+          type,
+          songId: validSongId,
+          lastSongId,
+          eventIndex: typeof eventIndex === "number" ? eventIndex : 0,
+          classificaIndex: typeof classificaIndex === "number" ? classificaIndex : 0,
+        },
         include: {
           song: { include: { votes: { where: { night: currentNight } } } },
           lastSong: { include: { votes: { where: { night: currentNight } } } },
@@ -128,13 +130,18 @@ export async function POST(req: Request) {
       appliedClassifica = typeof updated.classificaIndex === "number";
     } catch (err) {
       console.warn("[festival-status] upsert failed, retrying without classificaIndex", String(err));
-      // retry without classificaIndex in case Prisma client doesn't know the field
       if (updateData.classificaIndex !== undefined) delete updateData.classificaIndex;
       try {
         updated = await prisma.festivalStatus.upsert({
           where: { id: 1 },
           update: updateData,
-          create: { id: 1, type, songId: validSongId, lastSongId, eventIndex: typeof eventIndex === "number" ? eventIndex : 0 },
+          create: {
+            id: 1,
+            type,
+            songId: validSongId,
+            lastSongId,
+            eventIndex: typeof eventIndex === "number" ? eventIndex : 0,
+          },
           include: {
             song: { include: { votes: { where: { night: currentNight } } } },
             lastSong: { include: { votes: { where: { night: currentNight } } } },
@@ -142,16 +149,13 @@ export async function POST(req: Request) {
         });
       } catch (err2) {
         console.error("[festival-status] upsert retry failed", err2);
-        throw err2; // rethrow to be handled by outer catch
+        throw err2;
       }
     }
 
-    // If caller asked to set classificaIndex but the upsert above didn't apply it
-    // (client/schema mismatch), attempt a direct SQL update as a fallback.
     if (typeof classificaIndex === "number" && !appliedClassifica) {
       try {
         await prisma.$executeRaw`UPDATE festivalstatus SET classificaIndex = ${classificaIndex} WHERE id = 1`;
-        // refetch to reflect the change
         updated = await prisma.festivalStatus.findUnique({
           where: { id: 1 },
           include: {
@@ -164,12 +168,15 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── Pusher: include aiTesto e aiCommentoAt ──
     await pusher.trigger("festival", "status-update", {
       ...updated,
       song: updated?.song ? { ...updated.song, votes: [] } : null,
       lastSong: updated?.lastSong ? { ...updated.lastSong, votes: [] } : null,
       eventIndex: updated?.eventIndex ?? 0,
       classificaIndex: updated?.classificaIndex ?? classificaIndex ?? 0,
+      aiTesto: updated?.aiTesto ?? null,
+      aiCommentoAt: updated?.aiCommentoAt?.toISOString() ?? null,
     });
 
     if (roomCode) {
@@ -191,13 +198,13 @@ export async function POST(req: Request) {
       if (["presentazione", "spot", "pausa"].includes(type)) {
         const songForStats = updated.song ?? updated.lastSong;
         if (songForStats?.votes?.length) {
-          const vals = songForStats.votes.map((v) => v.value);
-          const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+          const vals = songForStats.votes.map((v: any) => v.value);
+          const avg = vals.reduce((a: number, b: number) => a + b, 0) / vals.length;
           const max = Math.max(...vals);
           const min = Math.min(...vals);
           setTimeout(() => notify(roomCode, `Voto finale: ${avg.toFixed(1)} ⭐`, "stat"), 2000);
-          const topVote = songForStats.votes.find((v) => v.value === max)!;
-          const lowVote = songForStats.votes.find((v) => v.value === min)!;
+          const topVote = songForStats.votes.find((v: any) => v.value === max)!;
+          const lowVote = songForStats.votes.find((v: any) => v.value === min)!;
           const topProfile = await prisma.profile.findUnique({ where: { id: topVote.profile_id } });
           const lowProfile = await prisma.profile.findUnique({ where: { id: lowVote.profile_id } });
           if (topProfile) setTimeout(() => notify(roomCode, `Più generoso: ${topProfile.username} con ${max} 😄`, "stat"), 6000);
@@ -217,7 +224,6 @@ export async function POST(req: Request) {
 export async function GET(req: Request) {
   try {
     const { searchParams } = new URL(req.url);
-    const roomCode = searchParams.get("roomCode");
     const userToken = searchParams.get("userToken");
 
     const currentNight = await getCurrentNight();
@@ -262,7 +268,7 @@ export async function GET(req: Request) {
       }
     }
 
-    return NextResponse.json({ 
+    return NextResponse.json({
       id: status.id,
       type: status.type,
       songId: status.songId,
@@ -270,8 +276,10 @@ export async function GET(req: Request) {
       eventIndex: status.eventIndex ?? 0,
       classificaIndex: status.classificaIndex ?? 0,
       updatedAt: status.updatedAt,
-      song: referenceSong, 
-      hasVoted 
+      aiTesto: status.aiTesto ?? null,                         
+      aiCommentoAt: status.aiCommentoAt?.toISOString() ?? null,
+      song: referenceSong,
+      hasVoted,
     });
   } catch (err) {
     console.error(err);
